@@ -1,0 +1,9 @@
+node_modules/
+dist/
+
+# Local reference art, not tracked
+*.webp
+*.local
+.DS_Store
+.vite/
+coverage/
