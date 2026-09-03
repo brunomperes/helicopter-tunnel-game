@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createInitialState, defaultConfig, type SimState, step } from "./index.js";
+import {
+	createInitialState,
+	defaultConfig,
+	rampGap,
+	rampSpeed,
+	type SimState,
+	step,
+} from "./index.js";
 import { hashSeed, nextRandom } from "./rng.js";
 
 /** Run the sim from a fresh state through a scripted sequence of thrust inputs. */
@@ -40,6 +47,50 @@ describe("rng", () => {
 			expect(v).toBe(expected);
 			s2 = next;
 		}
+	});
+});
+
+describe("difficulty ramp", () => {
+	const c = defaultConfig;
+
+	it("holds the start scroll speed through the grace distance", () => {
+		expect(rampSpeed(c, 0)).toBe(c.scroll.startSpeed);
+		expect(rampSpeed(c, c.ramp.graceDistance)).toBe(c.scroll.startSpeed);
+	});
+
+	it("eases scroll speed to the cap across the ramp, then holds it", () => {
+		const midpoint = c.ramp.graceDistance + c.ramp.distance / 2;
+		const expectedMid = (c.scroll.startSpeed + c.scroll.capSpeed) / 2;
+		expect(rampSpeed(c, midpoint)).toBeCloseTo(expectedMid, 6);
+
+		const rampEnd = c.ramp.graceDistance + c.ramp.distance;
+		expect(rampSpeed(c, rampEnd)).toBe(c.scroll.capSpeed);
+		expect(rampSpeed(c, rampEnd * 10)).toBe(c.scroll.capSpeed);
+	});
+
+	it("narrows the gap from start to cap on the same schedule as speed", () => {
+		expect(rampGap(c, 0)).toBe(c.tunnel.startGap);
+		expect(rampGap(c, c.ramp.graceDistance)).toBe(c.tunnel.startGap);
+
+		const midpoint = c.ramp.graceDistance + c.ramp.distance / 2;
+		expect(rampGap(c, midpoint)).toBeCloseTo(
+			(c.tunnel.startGap + c.tunnel.capGap) / 2,
+			6,
+		);
+
+		const rampEnd = c.ramp.graceDistance + c.ramp.distance;
+		expect(rampGap(c, rampEnd)).toBe(c.tunnel.capGap);
+		expect(rampGap(c, rampEnd * 10)).toBe(c.tunnel.capGap);
+	});
+
+	it("scrolls faster later in a run than at its start", () => {
+		const flying: SimState = { ...createInitialState("seed", c), phase: "flying" };
+		const earlyDelta = step(flying, false).distance - flying.distance;
+
+		const late: SimState = { ...flying, distance: c.ramp.graceDistance + c.ramp.distance };
+		const lateDelta = step(late, false).distance - late.distance;
+
+		expect(lateDelta / earlyDelta).toBeCloseTo(c.scroll.capSpeed / c.scroll.startSpeed, 4);
 	});
 });
 

@@ -9,10 +9,12 @@
  */
 
 import type { Config } from "./config.js";
+import { rampSpeed } from "./ramp.js";
 import { hashSeed } from "./rng.js";
 
 export type { Config } from "./config.js";
 export { defaultConfig } from "./config.js";
+export { rampGap, rampSpeed } from "./ramp.js";
 
 export type Phase = "attract" | "flying" | "wrecked";
 
@@ -117,9 +119,7 @@ function advanceRun(state: SimState, thrustHeld: boolean): SimState {
 
 /** Current scroll speed after the difficulty ramp. */
 function scrollSpeed(state: SimState): number {
-	// TODO: ease from startSpeed to capSpeed across `ramp.distance` once the
-	// grace zone is passed. Flat for now.
-	return state.config.scroll.startSpeed;
+	return rampSpeed(state.config, state.distance);
 }
 
 function clamp(value: number, min: number, max: number): number {
