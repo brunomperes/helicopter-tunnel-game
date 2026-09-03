@@ -366,6 +366,23 @@ describe("sim lifecycle", () => {
 		expect(state.helicopter.vy).toBe(0);
 	});
 
+	it("keeps generating tunnel as the attract-mode demo scroll runs past the initial lookahead", () => {
+		const c = defaultConfig;
+		// ~5 screen-widths of idle scroll; the initial tunnel only covers ~1.2.
+		const state = run(
+			"seed",
+			Array.from({ length: 2400 }, () => false),
+		);
+		expect(state.phase).toBe("attract");
+		expect(state.distance).toBeGreaterThan(4 * c.world.width);
+
+		const firstVisible = Math.floor(state.distance / c.tunnel.sliceWidth);
+		const lastVisible = Math.floor((state.distance + c.world.width) / c.tunnel.sliceWidth);
+		for (let i = firstVisible; i <= lastVisible; i++) {
+			expect(state.tunnel[i]).toBeDefined();
+		}
+	});
+
 	it("a thrust press in attract starts a run", () => {
 		const state = run("seed", [false, true]);
 		expect(state.phase).toBe("flying");

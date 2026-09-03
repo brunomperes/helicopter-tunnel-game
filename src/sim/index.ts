@@ -114,11 +114,11 @@ function startRun(state: SimState): SimState {
 /** Attract-mode idle scroll: keeps the background alive, no helicopter sim. */
 function scrollDemo(state: SimState): SimState {
 	const dt = 1 / state.config.tickHz;
-	return {
+	return ensureTunnel({
 		...state,
 		tick: state.tick + 1,
 		distance: state.distance + state.config.scroll.startSpeed * dt,
-	};
+	});
 }
 
 function advanceRun(state: SimState, thrustHeld: boolean): SimState {
