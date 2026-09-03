@@ -1,6 +1,6 @@
 # DISTANCE readout shows on the attract screen
 
-Status: needs-triage
+Status: ready-for-human
 
 ## Context
 
@@ -27,3 +27,19 @@ helicopter draw on the line above. A render test asserting no `DISTANCE` text is
 emitted while `phase === "attract"` would lock it down.
 
 ## Comments
+
+### 2026-09-03 — implemented (branch `worktree-hud-01-distance-attract`)
+
+Applied the suggested fix: `render()` now gates `drawHud` on
+`state.phase !== "attract"`, on the line right after the matching helicopter
+gate in `src/render/index.ts`.
+
+Added `src/render/render.test.ts` — the first render-layer test. It uses a
+minimal recording context that captures `fillText` strings and asserts:
+
+- attract phase (after several demo-scroll ticks, `distance > 0`) emits no
+  `DISTANCE` text;
+- flying phase emits both `DISTANCE:` and `BEST:` from the bottom HUD.
+
+`pnpm test` (38 passing), `pnpm typecheck`, `pnpm check` all clean. Awaiting
+human review / merge.
