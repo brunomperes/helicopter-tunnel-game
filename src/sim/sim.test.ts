@@ -33,6 +33,27 @@ function flyUntilCrash(seed: string, thrust = false): SimState {
 	return state;
 }
 
+/** Maximal runs of consecutive obstacle-bearing slices (one run per obstacle). */
+function obstacleGroups(slices: readonly Slice[]) {
+	const groups: Array<{ start: number; end: number; length: number; slices: Slice[] }> = [];
+	let i = 0;
+	while (i < slices.length) {
+		if (!slices[i]?.obstacle) {
+			i++;
+			continue;
+		}
+		const start = i;
+		const runSlices: Slice[] = [];
+		while (i < slices.length && slices[i]?.obstacle) {
+			const s = slices[i];
+			if (s) runSlices.push(s);
+			i++;
+		}
+		groups.push({ start, end: i - 1, length: runSlices.length, slices: runSlices });
+	}
+	return groups;
+}
+
 describe("rng", () => {
 	it("hashSeed is deterministic and differs by seed", () => {
 		expect(hashSeed("alpha")).toBe(hashSeed("alpha"));
@@ -116,27 +137,6 @@ describe("tunnel generation", () => {
 		}
 		return out;
 	}
-	/** Maximal runs of consecutive obstacle-bearing slices (one run per obstacle). */
-	function obstacleGroups(slices: readonly Slice[]) {
-		const groups: Array<{ start: number; end: number; length: number; slices: Slice[] }> = [];
-		let i = 0;
-		while (i < slices.length) {
-			if (!slices[i]?.obstacle) {
-				i++;
-				continue;
-			}
-			const start = i;
-			const run: Slice[] = [];
-			while (i < slices.length && slices[i]?.obstacle) {
-				const s = slices[i];
-				if (s) run.push(s);
-				i++;
-			}
-			groups.push({ start, end: i - 1, length: run.length, slices: run });
-		}
-		return groups;
-	}
-
 	it("opens with a centred, full-gap corridor and no obstacles through the grace distance", () => {
 		for (const s of generateTunnel("alpha", c, graceSlices)) {
 			expect(s.obstacle).toBeNull();
@@ -431,5 +431,86 @@ describe("sim lifecycle", () => {
 		state = step(state, true);
 		expect(state.phase).toBe("flying");
 		expect(state.tick).toBe(0);
+	});
+
+	/** A `flying` state parked so the helicopter overlaps tunnel slice `atIndex`. */
+	function flyingOverSlice(
+		seed: string,
+		slices: readonly Slice[],
+		gen: Parameters<typeof step>[0]["tunnelGen"],
+		atIndex: number,
+		helicopter: { y: number; vy: number },
+	): SimState {
+		const c = defaultConfig;
+		const heliX = c.helicopter.xFrac * c.world.width;
+		return {
+			...createInitialState(seed, c),
+			phase: "flying",
+			distance: atIndex * c.tunnel.sliceWidth + c.tunnel.sliceWidth / 2 - heliX,
+			tunnel: slices,
+			tunnelGen: gen,
+			helicopter,
+			prevThrust: true,
+		};
+	}
+
+	it("crashes into the body of a wide obstacle block, not only its leading slice", () => {
+		const c = defaultConfig;
+		const built = extendTunnel(initTunnelGen("zeta", c), c, 3000);
+		const blocks = obstacleGroups(built.slices).filter((g) => g.length >= 4 && g.end < 2500);
+		expect(blocks.length).toBeGreaterThan(3);
+		for (const b of blocks.slice(0, 5)) {
+			// An interior slice: the helicopter here overlaps only slices b.start+1..
+			// b.start+3, all past the block's leading edge.
+			const m = b.start + 2;
+			const slice = built.slices[m];
+			if (!slice?.obstacle) throw new Error("expected an obstacle slice");
+			const depth = slice.obstacle.depth;
+			const y = slice.obstacle.edge === "top" ? slice.top + depth - 1 : slice.bottom - depth + 1;
+			const state = flyingOverSlice("zeta", built.slices, built.gen, m, { y, vy: 0 });
+			expect(step(state, false).phase).toBe("wrecked");
+		}
+	});
+
+	it("lets the helicopter fly the length of a wide obstacle block through its clear opening", () => {
+		const c = defaultConfig;
+		let found:
+			| { built: ReturnType<typeof extendTunnel>; block: ReturnType<typeof obstacleGroups>[number] }
+			| undefined;
+		for (const seed of ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]) {
+			const built = extendTunnel(initTunnelGen(seed, c), c, 3000);
+			const block = obstacleGroups(built.slices).find(
+				(g) => g.length >= 5 && g.start > 60 && g.end < 1800,
+			);
+			if (block) {
+				found = { built, block };
+				break;
+			}
+		}
+		if (!found) throw new Error("no suitable obstacle block found");
+		const { built, block } = found;
+		const lead = built.slices[block.start];
+		if (!lead?.obstacle) throw new Error("expected an obstacle slice");
+		const depth = lead.obstacle.depth;
+		const openingCentre =
+			lead.obstacle.edge === "top"
+				? (lead.top + depth + lead.bottom) / 2
+				: (lead.top + (lead.bottom - depth)) / 2;
+
+		let state = flyingOverSlice("_", built.slices, built.gen, block.start, {
+			y: openingCentre,
+			vy: 0,
+		});
+		const heliX = c.helicopter.xFrac * c.world.width;
+		// The helicopter's trailing edge has cleared the block's last slice.
+		const cleared = (d: number) =>
+			d + heliX + c.helicopter.width / 2 > (block.end + 1) * c.tunnel.sliceWidth;
+		let i = 0;
+		for (; i < 5000 && state.phase === "flying" && !cleared(state.distance); i++) {
+			// Crude hold: thrust when below the opening centre (y-down), else coast.
+			state = step(state, state.helicopter.y > openingCentre);
+		}
+		expect(state.phase).toBe("flying");
+		expect(cleared(state.distance)).toBe(true);
 	});
 });
