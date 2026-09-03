@@ -143,8 +143,8 @@ export function extendTunnel(
 		}
 
 		// Obstacles past the grace distance: one block per `obstacleInterval`-wide
-		// band, spanning several slices from a single edge at one depth. Band 0 is
-		// left clear so the run has an obstacle-free stretch to settle into after
+		// band, spanning one or more slices from a single edge at one depth. Band 0
+		// is left clear so the run has an obstacle-free stretch to settle into after
 		// the grace corridor. Distinct blocks are always parted by a clear slice.
 		let obstacle: Obstacle | null = null;
 		if (obstacleRemaining > 0) {

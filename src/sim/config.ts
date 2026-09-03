@@ -92,7 +92,7 @@ export const defaultConfig: Config = {
 		startGap: 320,
 		capGap: 180,
 		obstacleInterval: 340,
-		obstacleMinSlices: 3,
+		obstacleMinSlices: 1,
 		obstacleMaxSlices: 7,
 		clearance: 64,
 		followFactor: 0.6,

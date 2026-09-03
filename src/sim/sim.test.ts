@@ -215,7 +215,7 @@ describe("tunnel generation", () => {
 		}
 	});
 
-	it("makes each obstacle a block of several slices sharing one edge and depth", () => {
+	it("makes each obstacle a block of slices sharing one edge and one depth", () => {
 		for (const seed of seeds) {
 			const slices = generateTunnel(seed, c, 8000);
 			// Drop a block still being generated at the very end of the range.
@@ -223,11 +223,14 @@ describe("tunnel generation", () => {
 			expect(groups.length).toBeGreaterThan(5);
 			for (const g of groups) {
 				expect(g.length).toBeGreaterThanOrEqual(c.tunnel.obstacleMinSlices);
+				expect(g.length).toBeLessThanOrEqual(c.tunnel.obstacleMaxSlices);
 				const edges = new Set(g.slices.map((s) => s.obstacle?.edge));
 				expect(edges.size).toBe(1);
 				const depth0 = g.slices[0]?.obstacle?.depth ?? 0;
 				for (const s of g.slices) expect(s.obstacle?.depth ?? 0).toBeCloseTo(depth0, 6);
 			}
+			// Blocks wider than one slice do occur.
+			expect(groups.some((g) => g.length > 1)).toBe(true);
 		}
 	});
 
