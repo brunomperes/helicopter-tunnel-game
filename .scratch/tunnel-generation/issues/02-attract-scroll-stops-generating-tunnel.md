@@ -55,3 +55,11 @@ several screen-widths, then assert every slice under
 length keeps up with `distance`).
 
 ## Comments
+
+- 2026-09-03: Fixed on branch `worktree-tunnel-gen-02-attract-black-screen`.
+  `scrollDemo` now wraps its return in `ensureTunnel`, matching `advanceRun`.
+  Added sim test "keeps generating tunnel as the attract-mode demo scroll runs
+  past the initial lookahead" (`src/sim/sim.test.ts`): 2400 attract ticks
+  (~5 screen-widths), then asserts every slice under `[distance, distance +
+  world.width]` is defined. Verified the test fails without the one-line fix.
+  Full suite (37 tests), typecheck, and biome all pass.
