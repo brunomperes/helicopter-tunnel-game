@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { createInitialState, defaultConfig, type SimState, step } from "./index.js";
+import {
+	createInitialState,
+	defaultConfig,
+	rampGap,
+	rampSpeed,
+	type SimState,
+	step,
+} from "./index.js";
 import { hashSeed, nextRandom } from "./rng.js";
+import {
+	extendTunnel,
+	generateTunnel,
+	initTunnelGen,
+	maxEdgeStep,
+	type Slice,
+	sliceDistance,
+} from "./tunnel.js";
 
 /** Run the sim from a fresh state through a scripted sequence of thrust inputs. */
 function run(seed: string, thrusts: boolean[]): SimState {
@@ -43,6 +58,184 @@ describe("rng", () => {
 	});
 });
 
+describe("difficulty ramp", () => {
+	const c = defaultConfig;
+
+	it("holds the start scroll speed through the grace distance", () => {
+		expect(rampSpeed(c, 0)).toBe(c.scroll.startSpeed);
+		expect(rampSpeed(c, c.ramp.graceDistance)).toBe(c.scroll.startSpeed);
+	});
+
+	it("eases scroll speed to the cap across the ramp, then holds it", () => {
+		const midpoint = c.ramp.graceDistance + c.ramp.distance / 2;
+		const expectedMid = (c.scroll.startSpeed + c.scroll.capSpeed) / 2;
+		expect(rampSpeed(c, midpoint)).toBeCloseTo(expectedMid, 6);
+
+		const rampEnd = c.ramp.graceDistance + c.ramp.distance;
+		expect(rampSpeed(c, rampEnd)).toBe(c.scroll.capSpeed);
+		expect(rampSpeed(c, rampEnd * 10)).toBe(c.scroll.capSpeed);
+	});
+
+	it("narrows the gap from start to cap on the same schedule as speed", () => {
+		expect(rampGap(c, 0)).toBe(c.tunnel.startGap);
+		expect(rampGap(c, c.ramp.graceDistance)).toBe(c.tunnel.startGap);
+
+		const midpoint = c.ramp.graceDistance + c.ramp.distance / 2;
+		expect(rampGap(c, midpoint)).toBeCloseTo((c.tunnel.startGap + c.tunnel.capGap) / 2, 6);
+
+		const rampEnd = c.ramp.graceDistance + c.ramp.distance;
+		expect(rampGap(c, rampEnd)).toBe(c.tunnel.capGap);
+		expect(rampGap(c, rampEnd * 10)).toBe(c.tunnel.capGap);
+	});
+
+	it("scrolls faster later in a run than at its start", () => {
+		const flying: SimState = { ...createInitialState("seed", c), phase: "flying" };
+		const earlyDelta = step(flying, false).distance - flying.distance;
+
+		const late: SimState = { ...flying, distance: c.ramp.graceDistance + c.ramp.distance };
+		const lateDelta = step(late, false).distance - late.distance;
+
+		expect(lateDelta / earlyDelta).toBeCloseTo(c.scroll.capSpeed / c.scroll.startSpeed, 4);
+	});
+});
+
+describe("tunnel generation", () => {
+	const c = defaultConfig;
+	const seeds = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"];
+	const graceSlices = Math.ceil(c.ramp.graceDistance / c.tunnel.sliceWidth);
+
+	/** Effective vertical opening of a slice after any obstacle. */
+	const opening = (s: Slice) => s.bottom - s.top - (s.obstacle?.depth ?? 0);
+	/** Adjacent `[index, prev, curr]` triples over a slice list. */
+	function adjacent(slices: readonly Slice[]): Array<[number, Slice, Slice]> {
+		const out: Array<[number, Slice, Slice]> = [];
+		for (let i = 1; i < slices.length; i++) {
+			const prev = slices[i - 1];
+			const curr = slices[i];
+			if (prev && curr) out.push([i, prev, curr]);
+		}
+		return out;
+	}
+	/** Slice indices that carry an obstacle. */
+	const obstacleIndices = (slices: readonly Slice[]) =>
+		slices.flatMap((s, i) => (s.obstacle ? [i] : []));
+
+	it("opens with a centred, full-gap corridor and no obstacles through the grace distance", () => {
+		for (const s of generateTunnel("alpha", c, graceSlices)) {
+			expect(s.obstacle).toBeNull();
+			expect(s.bottom - s.top).toBeCloseTo(c.tunnel.startGap, 6);
+			expect((s.top + s.bottom) / 2).toBeCloseTo(c.world.height / 2, 6);
+		}
+	});
+
+	it("narrows the raw gap toward the cap once past the grace distance", () => {
+		const slices = generateTunnel("beta", c, graceSlices + Math.ceil(c.ramp.distance / 12) + 200);
+		const midRamp = slices[graceSlices + Math.floor(c.ramp.distance / c.tunnel.sliceWidth / 2)];
+		const last = slices.at(-1);
+		if (!midRamp || !last) throw new Error("too few slices");
+		expect(midRamp.bottom - midRamp.top).toBeCloseTo((c.tunnel.startGap + c.tunnel.capGap) / 2, 4);
+		expect(last.bottom - last.top).toBeCloseTo(c.tunnel.capGap, 6);
+	});
+
+	it("bounds the per-slice edge step by the vertical distance the helicopter can cover", () => {
+		// Worked from the default config. Slice-scroll time T = sliceWidth / speed.
+		// Reachable distance from rest = 0.5 * min(thrust - gravity, gravity) * T^2,
+		// capped by terminalVelocity * T. At speed 180: T = 12/180 = 1/15 s,
+		// 0.5 * 900 * (1/15)^2 = 2.0 px (well under the 34.7 px terminal cap).
+		expect(maxEdgeStep(c, 0)).toBeCloseTo(2.0, 6);
+		// At the cap speed 360: T = 12/360 = 1/30 s, 0.5 * 900 * (1/30)^2 = 0.5 px.
+		const atCap = maxEdgeStep(c, c.ramp.graceDistance + c.ramp.distance);
+		expect(atCap).toBeCloseTo(0.5, 6);
+		// Faster scroll later in the run means a tighter bound.
+		expect(atCap).toBeLessThan(maxEdgeStep(c, 0));
+	});
+
+	it("moves each edge between adjacent slices by less than the craft can cover, for many seeds", () => {
+		for (const seed of seeds) {
+			for (const [i, prev, curr] of adjacent(generateTunnel(seed, c, 6000))) {
+				const reachable = maxEdgeStep(c, sliceDistance(c, i));
+				// Clamped to followFactor of what the helicopter can physically cover,
+				// leaving the player reaction headroom (ADR-0003 "clamped below").
+				const limit = c.tunnel.followFactor * reachable + 1e-9;
+				expect(Math.abs(curr.top - prev.top)).toBeLessThanOrEqual(limit);
+				expect(Math.abs(curr.bottom - prev.bottom)).toBeLessThanOrEqual(limit);
+				expect(limit).toBeLessThan(reachable);
+			}
+		}
+	});
+
+	it("keeps both edges inside the world, for many seeds", () => {
+		for (const seed of seeds) {
+			for (const s of generateTunnel(seed, c, 6000)) {
+				expect(s.top).toBeGreaterThanOrEqual(0);
+				expect(s.bottom).toBeLessThanOrEqual(c.world.height);
+			}
+		}
+	});
+
+	it("wanders the corridor vertically after the grace distance", () => {
+		const centres = generateTunnel("alpha", c, 6000)
+			.slice(graceSlices + 10)
+			.map((s) => (s.top + s.bottom) / 2);
+		expect(Math.max(...centres) - Math.min(...centres)).toBeGreaterThan(80);
+	});
+
+	it("places obstacles only past the grace distance and never in consecutive slices", () => {
+		for (const seed of seeds) {
+			const indices = obstacleIndices(generateTunnel(seed, c, 8000));
+			expect(indices.length).toBeGreaterThan(10);
+			for (const i of indices) {
+				expect(sliceDistance(c, i)).toBeGreaterThanOrEqual(c.ramp.graceDistance);
+			}
+			for (let k = 1; k < indices.length; k++) {
+				const gap = (indices[k] ?? 0) - (indices[k - 1] ?? 0);
+				expect(gap).toBeGreaterThan(1);
+			}
+		}
+	});
+
+	it("keeps the effective opening at least a helicopter plus clearance, for many seeds", () => {
+		const floor = c.helicopter.height + c.tunnel.clearance;
+		for (const seed of seeds) {
+			for (const s of generateTunnel(seed, c, 8000)) {
+				expect(opening(s)).toBeGreaterThanOrEqual(floor - 1e-9);
+			}
+		}
+	});
+
+	it("spaces successive obstacles by about one obstacleInterval", () => {
+		const indices = obstacleIndices(generateTunnel("alpha", c, 8000));
+		for (let k = 1; k < indices.length; k++) {
+			const spacing = sliceDistance(c, indices[k] ?? 0) - sliceDistance(c, indices[k - 1] ?? 0);
+			expect(spacing).toBeGreaterThanOrEqual(c.tunnel.obstacleInterval - c.tunnel.sliceWidth);
+			expect(spacing).toBeLessThanOrEqual(2 * c.tunnel.obstacleInterval);
+		}
+	});
+
+	it("is fully determined by the seed", () => {
+		expect(generateTunnel("alpha", c, 2000)).toEqual(generateTunnel("alpha", c, 2000));
+		expect(generateTunnel("alpha", c, 2000)).not.toEqual(generateTunnel("beta", c, 2000));
+	});
+
+	it("is a stable prefix: generating more slices does not change the earlier ones", () => {
+		const short = generateTunnel("gamma", c, 1500);
+		const long = generateTunnel("gamma", c, 4000);
+		expect(long.slice(0, 1500)).toEqual(short);
+	});
+
+	it("extends incrementally to the same tunnel as one-shot generation", () => {
+		const oneShot = generateTunnel("delta", c, 900);
+		let gen = initTunnelGen("delta", c);
+		const pieces: Slice[] = [];
+		for (const to of [100, 250, 251, 600, 900]) {
+			const r = extendTunnel(gen, c, to);
+			pieces.push(...r.slices);
+			gen = r.gen;
+		}
+		expect(pieces).toEqual(oneShot);
+	});
+});
+
 describe("sim lifecycle", () => {
 	it("starts in attract and idles the demo scroll without a helicopter sim", () => {
 		const state = run("seed", [false, false, false]);
@@ -68,6 +261,50 @@ describe("sim lifecycle", () => {
 		expect(state.phase).toBe("wrecked");
 		expect(state.distance).toBeGreaterThan(0);
 		expect(state.restartLock).toBe(defaultConfig.restartLockTicks);
+	});
+
+	it("crashes into the tunnel floor edge, well above the world floor, when never thrusting", () => {
+		const c = defaultConfig;
+		const crashed = flyUntilCrash("alpha");
+		const half = c.helicopter.height / 2;
+		// The grace corridor's floor edge sits at worldHeight/2 + startGap/2 = 430,
+		// a full 100px above the 540 world floor the stub used.
+		const graceFloor = c.world.height / 2 + c.tunnel.startGap / 2;
+		expect(crashed.phase).toBe("wrecked");
+		expect(crashed.helicopter.y + half).toBeGreaterThan(graceFloor - c.tunnel.sliceWidth);
+		expect(crashed.helicopter.y + half).toBeLessThan(c.world.height - 20);
+	});
+
+	it("does not crash inside the centred, obstacle-free grace corridor while roughly hovering", () => {
+		// Pulsing thrust every other tick keeps the helicopter within a few px of
+		// the centre. The grace corridor (gap 320, centred, no obstacles) is wide
+		// enough that this never crashes before the ramp begins.
+		const c = defaultConfig;
+		let state = step(createInitialState("alpha", c), true);
+		for (let i = 0; state.distance < c.ramp.graceDistance - 20 && state.phase === "flying"; i++) {
+			state = step(state, i % 2 === 0);
+		}
+		expect(state.phase).toBe("flying");
+		expect(state.distance).toBeGreaterThan(c.ramp.graceDistance - 30);
+	});
+
+	it("crashes into the tunnel ceiling edge when thrust is held continuously", () => {
+		const c = defaultConfig;
+		const crashed = flyUntilCrash("alpha", true);
+		const half = c.helicopter.height / 2;
+		const graceCeil = c.world.height / 2 - c.tunnel.startGap / 2;
+		expect(crashed.phase).toBe("wrecked");
+		expect(crashed.helicopter.y - half).toBeGreaterThanOrEqual(0);
+		expect(crashed.helicopter.y - half).toBeLessThan(graceCeil + c.tunnel.sliceWidth);
+	});
+
+	it("keeps the generated tunnel at least a screen ahead of the helicopter", () => {
+		const c = defaultConfig;
+		let state = step(createInitialState("alpha", c), true);
+		for (let i = 0; i < 500 && state.phase === "flying"; i++) state = step(state, i % 3 === 0);
+		const heliLead = state.distance + c.helicopter.xFrac * c.world.width;
+		const generatedTo = state.tunnel.length * c.tunnel.sliceWidth;
+		expect(generatedTo).toBeGreaterThan(heliLead + c.world.width);
 	});
 
 	it("holds altitude better while thrusting than while falling", () => {

@@ -46,6 +46,13 @@ export interface Config {
 		readonly capGap: number;
 		/** Spacing between obstacles, px. */
 		readonly obstacleInterval: number;
+		/** Slack kept between the effective opening and the helicopter height, px. */
+		readonly clearance: number;
+		/**
+		 * Fraction of the helicopter's per-slice reachable vertical distance that an
+		 * edge is allowed to move (< 1 leaves the player reaction headroom). ADR-0003.
+		 */
+		readonly followFactor: number;
 	};
 
 	readonly ramp: {
@@ -81,6 +88,8 @@ export const defaultConfig: Config = {
 		startGap: 320,
 		capGap: 180,
 		obstacleInterval: 340,
+		clearance: 64,
+		followFactor: 0.6,
 	},
 	ramp: {
 		distance: 4800,

@@ -3,16 +3,21 @@
  * deterministic function of `(seed, sequence of thrustHeld booleans)`. See
  * ADR-0002.
  *
- * SCAFFOLD STATUS: phases, transitions and helicopter physics are wired.
- * Tunnel generation, the difficulty ramp and real collision are stubbed with a
- * `TODO` and will be built test-first (see docs/adr/0003 for the invariants).
+ * The difficulty ramp, tunnel generation and collision live in sibling modules
+ * (`ramp`, `tunnel`, `collision`); `step` composes them. See docs/adr/0003.
  */
 
+import { crashes } from "./collision.js";
 import type { Config } from "./config.js";
+import { rampSpeed } from "./ramp.js";
 import { hashSeed } from "./rng.js";
+import { extendTunnel, initTunnelGen, type Slice, type TunnelGen } from "./tunnel.js";
 
 export type { Config } from "./config.js";
 export { defaultConfig } from "./config.js";
+export { rampGap, rampSpeed } from "./ramp.js";
+export type { Slice } from "./tunnel.js";
+export { generateTunnel, maxEdgeStep, sliceDistance } from "./tunnel.js";
 
 export type Phase = "attract" | "flying" | "wrecked";
 
@@ -38,10 +43,37 @@ export interface SimState {
 	readonly prevThrust: boolean;
 	/** Ticks remaining before input can leave the `wrecked` phase. */
 	readonly restartLock: number;
+	/**
+	 * Generated tunnel slices, indexed from run start (slice `i` spans tunnel
+	 * distance `[i * sliceWidth, (i + 1) * sliceWidth)`). Grows a screen-width
+	 * ahead of the helicopter as the run scrolls.
+	 */
+	readonly tunnel: readonly Slice[];
+	/** Generator walk state, for extending `tunnel`. */
+	readonly tunnelGen: TunnelGen;
+}
+
+/** Slices to keep generated beyond the helicopter's leading edge (one screen). */
+function lookaheadSlices(config: Config): number {
+	return Math.ceil(config.world.width / config.tunnel.sliceWidth) + 2;
+}
+
+/** Extend `tunnel` so it is generated up to `lookaheadSlices` past `distance`. */
+function ensureTunnel(state: SimState): SimState {
+	const heliLead =
+		state.distance +
+		state.config.helicopter.xFrac * state.config.world.width +
+		state.config.helicopter.width / 2;
+	const toIndex =
+		Math.floor(heliLead / state.config.tunnel.sliceWidth) + lookaheadSlices(state.config);
+	if (toIndex <= state.tunnelGen.nextIndex) return state;
+
+	const { slices, gen } = extendTunnel(state.tunnelGen, state.config, toIndex);
+	return { ...state, tunnel: [...state.tunnel, ...slices], tunnelGen: gen };
 }
 
 export function createInitialState(seed: string, config: Config): SimState {
-	return {
+	return ensureTunnel({
 		config,
 		seed,
 		phase: "attract",
@@ -51,7 +83,9 @@ export function createInitialState(seed: string, config: Config): SimState {
 		helicopter: { y: config.world.height / 2, vy: 0 },
 		prevThrust: false,
 		restartLock: 0,
-	};
+		tunnel: [],
+		tunnelGen: initTunnelGen(seed, config),
+	});
 }
 
 /** Advance the simulation by exactly one fixed tick. Pure. */
@@ -88,7 +122,7 @@ function scrollDemo(state: SimState): SimState {
 }
 
 function advanceRun(state: SimState, thrustHeld: boolean): SimState {
-	const { tickHz, physics, world } = state.config;
+	const { tickHz, physics } = state.config;
 	const dt = 1 / tickHz;
 
 	const accel = physics.gravity + (thrustHeld ? -physics.thrust : 0);
@@ -99,27 +133,22 @@ function advanceRun(state: SimState, thrustHeld: boolean): SimState {
 	);
 	const y = state.helicopter.y + vy * dt;
 
-	const next: SimState = {
+	const next = ensureTunnel({
 		...state,
 		tick: state.tick + 1,
 		distance: state.distance + scrollSpeed(state) * dt,
 		helicopter: { y, vy },
-	};
+	});
 
-	// TODO: replace this world-bounds check with real collision against the
-	// generated tunnel edges and obstacles (docs/adr/0003).
-	const half = state.config.helicopter.height / 2;
-	if (y - half < 0 || y + half > world.height) {
-		return { ...next, phase: "wrecked", restartLock: state.config.restartLockTicks };
+	if (crashes(next.config, next.helicopter, next.tunnel, next.distance)) {
+		return { ...next, phase: "wrecked", restartLock: next.config.restartLockTicks };
 	}
 	return next;
 }
 
 /** Current scroll speed after the difficulty ramp. */
 function scrollSpeed(state: SimState): number {
-	// TODO: ease from startSpeed to capSpeed across `ramp.distance` once the
-	// grace zone is passed. Flat for now.
-	return state.config.scroll.startSpeed;
+	return rampSpeed(state.config, state.distance);
 }
 
 function clamp(value: number, min: number, max: number): number {
