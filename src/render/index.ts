@@ -22,7 +22,7 @@ export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudM
 
 	drawTunnel(ctx, state);
 	if (state.phase !== "attract") drawHelicopter(ctx, state);
-	drawHud(ctx, state, hud);
+	if (state.phase !== "attract") drawHud(ctx, state, hud);
 	if (hud.dev) drawDevReadout(ctx, state);
 
 	if (state.phase === "attract") drawAttract(ctx, state, hud);
