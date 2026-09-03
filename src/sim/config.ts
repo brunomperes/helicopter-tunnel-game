@@ -60,8 +60,14 @@ export interface Config {
 	};
 
 	readonly ramp: {
-		/** Distance over which speed and gap ease from start to cap, px. */
+		/** Distance over which the gap eases from start to cap, px. */
 		readonly distance: number;
+		/**
+		 * Multiplier on `distance` for the speed ramp only. > 1 eases speed in more
+		 * gradually than the gap, so a run does not accelerate as sharply. Raise this
+		 * for a slower speed increase, lower it (toward 1) for a faster one.
+		 */
+		readonly speedDistanceScale: number;
 		/** Opening stretch with max centred gap and no obstacles, px. */
 		readonly graceDistance: number;
 	};
@@ -84,7 +90,7 @@ export const defaultConfig: Config = {
 		xFrac: 0.28,
 	},
 	scroll: {
-		startSpeed: 180,
+		startSpeed: 250,
 		capSpeed: 360,
 	},
 	tunnel: {
@@ -99,7 +105,8 @@ export const defaultConfig: Config = {
 	},
 	ramp: {
 		distance: 4800,
-		graceDistance: 1200,
+		speedDistanceScale: 10,
+		graceDistance: 600,
 	},
 	restartLockTicks: 60,
 };

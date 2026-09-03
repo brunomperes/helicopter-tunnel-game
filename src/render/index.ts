@@ -5,11 +5,13 @@
  * phase overlays. Colours are the placeholder palette; the art pass is deferred.
  */
 
-import type { SimState, Slice } from "../sim/index.js";
+import { rampSpeed, type SimState, type Slice } from "../sim/index.js";
 import { theme } from "../theme.js";
 
 export interface HudModel {
 	readonly best: number;
+	/** When true, draw the dev/playtest readout (speed + distance). */
+	readonly dev: boolean;
 }
 
 export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
@@ -21,6 +23,7 @@ export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudM
 	drawTunnel(ctx, state);
 	if (state.phase !== "attract") drawHelicopter(ctx, state);
 	drawHud(ctx, state, hud);
+	if (hud.dev) drawDevReadout(ctx, state);
 
 	if (state.phase === "attract") drawAttract(ctx, state, hud);
 	if (state.phase === "wrecked") drawWrecked(ctx, state, hud);
@@ -77,13 +80,28 @@ function drawHelicopter(ctx: CanvasRenderingContext2D, state: SimState): void {
 }
 
 function drawHud(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
+	const y = state.config.world.height - 16;
 	ctx.fillStyle = theme.hudText;
 	ctx.font = theme.hudFont;
 	ctx.textBaseline = "alphabetic";
 	ctx.textAlign = "left";
-	ctx.fillText(`DISTANCE: ${Math.floor(state.distance)}`, 16, state.config.world.height - 16);
+	ctx.fillText(`DISTANCE: ${Math.floor(state.distance)}`, 16, y);
 	ctx.textAlign = "right";
-	ctx.fillText(`BEST: ${hud.best}`, state.config.world.width - 16, state.config.world.height - 16);
+	ctx.fillText(`BEST: ${hud.best}`, state.config.world.width - 16, y);
+}
+
+/**
+ * Dev/playtest readout, top-left: current scroll speed (post-ramp) and distance.
+ * Gated on `hud.dev` so it never ships in a production build.
+ */
+function drawDevReadout(ctx: CanvasRenderingContext2D, state: SimState): void {
+	const speed = rampSpeed(state.config, state.distance);
+	ctx.fillStyle = theme.devText;
+	ctx.font = theme.hudFont;
+	ctx.textBaseline = "top";
+	ctx.textAlign = "left";
+	ctx.fillText(`SPEED: ${speed.toFixed(1)} px/s`, 16, 16);
+	ctx.fillText(`DIST:  ${Math.floor(state.distance)}`, 16, 34);
 }
 
 function drawAttract(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
