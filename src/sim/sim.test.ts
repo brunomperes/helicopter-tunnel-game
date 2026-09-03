@@ -272,6 +272,26 @@ describe("tunnel generation", () => {
 		}
 	});
 
+	it("keeps the opening clear through the whole of a mid-ramp obstacle block", () => {
+		// Blocks that sit entirely inside the narrowing ramp are where a depth sized
+		// off the block's leading (wider) gap would over-cut its trailing slices.
+		const floor = c.helicopter.height + c.tunnel.clearance;
+		let midRampBlocks = 0;
+		for (const seed of seeds) {
+			const slices = generateTunnel(seed, c, 8000);
+			for (const g of obstacleGroups(slices).filter((x) => x.end < slices.length - 1)) {
+				const startD = sliceDistance(c, g.start);
+				const endD = sliceDistance(c, g.end);
+				if (startD <= c.ramp.graceDistance || endD >= c.ramp.graceDistance + c.ramp.distance) {
+					continue;
+				}
+				midRampBlocks++;
+				for (const s of g.slices) expect(opening(s)).toBeGreaterThanOrEqual(floor - 1e-9);
+			}
+		}
+		expect(midRampBlocks).toBeGreaterThan(20);
+	});
+
 	it("spaces successive obstacle blocks by about one obstacleInterval", () => {
 		const groups = obstacleGroups(generateTunnel("alpha", c, 8000));
 		for (let k = 1; k < groups.length; k++) {
@@ -303,6 +323,20 @@ describe("tunnel generation", () => {
 			gen = r.gen;
 		}
 		expect(pieces).toEqual(oneShot);
+	});
+
+	it("resumes an obstacle block that straddles an extendTunnel boundary", () => {
+		const seed = "epsilon";
+		const oneShot = generateTunnel(seed, c, 2000);
+		const blocks = obstacleGroups(oneShot).filter((g) => g.length >= 3 && g.end < 1999);
+		expect(blocks.length).toBeGreaterThan(3);
+		for (const b of blocks.slice(0, 6)) {
+			// Cut generation one slice into the block, then finish it.
+			const cut = b.start + 1;
+			const first = extendTunnel(initTunnelGen(seed, c), c, cut);
+			const rest = extendTunnel(first.gen, c, 2000);
+			expect([...first.slices, ...rest.slices]).toEqual(oneShot);
+		}
 	});
 });
 
