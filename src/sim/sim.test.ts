@@ -8,7 +8,7 @@ import {
 	step,
 } from "./index.js";
 import { hashSeed, nextRandom } from "./rng.js";
-import { generateTunnel, maxEdgeStep } from "./tunnel.js";
+import { generateTunnel, maxEdgeStep, type Slice, sliceDistance } from "./tunnel.js";
 
 /** Run the sim from a fresh state through a scripted sequence of thrust inputs. */
 function run(seed: string, thrusts: boolean[]): SimState {
@@ -74,10 +74,7 @@ describe("difficulty ramp", () => {
 		expect(rampGap(c, c.ramp.graceDistance)).toBe(c.tunnel.startGap);
 
 		const midpoint = c.ramp.graceDistance + c.ramp.distance / 2;
-		expect(rampGap(c, midpoint)).toBeCloseTo(
-			(c.tunnel.startGap + c.tunnel.capGap) / 2,
-			6,
-		);
+		expect(rampGap(c, midpoint)).toBeCloseTo((c.tunnel.startGap + c.tunnel.capGap) / 2, 6);
 
 		const rampEnd = c.ramp.graceDistance + c.ramp.distance;
 		expect(rampGap(c, rampEnd)).toBe(c.tunnel.capGap);
@@ -101,12 +98,23 @@ describe("tunnel generation", () => {
 	const graceSlices = Math.ceil(c.ramp.graceDistance / c.tunnel.sliceWidth);
 
 	/** Effective vertical opening of a slice after any obstacle. */
-	const opening = (s: { top: number; bottom: number; obstacle: { depth: number } | null }) =>
-		s.bottom - s.top - (s.obstacle?.depth ?? 0);
+	const opening = (s: Slice) => s.bottom - s.top - (s.obstacle?.depth ?? 0);
+	/** Adjacent `[index, prev, curr]` triples over a slice list. */
+	function adjacent(slices: readonly Slice[]): Array<[number, Slice, Slice]> {
+		const out: Array<[number, Slice, Slice]> = [];
+		for (let i = 1; i < slices.length; i++) {
+			const prev = slices[i - 1];
+			const curr = slices[i];
+			if (prev && curr) out.push([i, prev, curr]);
+		}
+		return out;
+	}
+	/** Slice indices that carry an obstacle. */
+	const obstacleIndices = (slices: readonly Slice[]) =>
+		slices.flatMap((s, i) => (s.obstacle ? [i] : []));
 
 	it("opens with a centred, full-gap corridor and no obstacles through the grace distance", () => {
-		const slices = generateTunnel("alpha", c, graceSlices);
-		for (const s of slices) {
+		for (const s of generateTunnel("alpha", c, graceSlices)) {
 			expect(s.obstacle).toBeNull();
 			expect(s.bottom - s.top).toBeCloseTo(c.tunnel.startGap, 6);
 			expect((s.top + s.bottom) / 2).toBeCloseTo(c.world.height / 2, 6);
@@ -114,17 +122,11 @@ describe("tunnel generation", () => {
 	});
 
 	it("narrows the raw gap toward the cap once past the grace distance", () => {
-		const rampEndSlice = Math.ceil(
-			(c.ramp.graceDistance + c.ramp.distance) / c.tunnel.sliceWidth,
-		);
-		const slices = generateTunnel("beta", c, rampEndSlice + 200);
-		const midRamp = graceSlices + Math.floor(c.ramp.distance / c.tunnel.sliceWidth / 2);
-		expect(slices[midRamp].bottom - slices[midRamp].top).toBeCloseTo(
-			(c.tunnel.startGap + c.tunnel.capGap) / 2,
-			4,
-		);
+		const slices = generateTunnel("beta", c, graceSlices + Math.ceil(c.ramp.distance / 12) + 200);
+		const midRamp = slices[graceSlices + Math.floor(c.ramp.distance / c.tunnel.sliceWidth / 2)];
 		const last = slices.at(-1);
-		if (!last) throw new Error("no slices");
+		if (!midRamp || !last) throw new Error("too few slices");
+		expect(midRamp.bottom - midRamp.top).toBeCloseTo((c.tunnel.startGap + c.tunnel.capGap) / 2, 4);
 		expect(last.bottom - last.top).toBeCloseTo(c.tunnel.capGap, 6);
 	});
 
@@ -135,11 +137,79 @@ describe("tunnel generation", () => {
 		// 0.5 * 900 * (1/15)^2 = 2.0 px (well under the 34.7 px terminal cap).
 		expect(maxEdgeStep(c, 0)).toBeCloseTo(2.0, 6);
 		// At the cap speed 360: T = 12/360 = 1/30 s, 0.5 * 900 * (1/30)^2 = 0.5 px.
-		expect(maxEdgeStep(c, c.ramp.graceDistance + c.ramp.distance)).toBeCloseTo(0.5, 6);
+		const atCap = maxEdgeStep(c, c.ramp.graceDistance + c.ramp.distance);
+		expect(atCap).toBeCloseTo(0.5, 6);
 		// Faster scroll later in the run means a tighter bound.
-		expect(maxEdgeStep(c, c.ramp.graceDistance + c.ramp.distance)).toBeLessThan(
-			maxEdgeStep(c, 0),
-		);
+		expect(atCap).toBeLessThan(maxEdgeStep(c, 0));
+	});
+
+	it("never moves an edge between adjacent slices by more than maxEdgeStep, for many seeds", () => {
+		for (const seed of seeds) {
+			for (const [i, prev, curr] of adjacent(generateTunnel(seed, c, 6000))) {
+				const limit = maxEdgeStep(c, sliceDistance(c, i)) + 1e-9;
+				expect(Math.abs(curr.top - prev.top)).toBeLessThanOrEqual(limit);
+				expect(Math.abs(curr.bottom - prev.bottom)).toBeLessThanOrEqual(limit);
+			}
+		}
+	});
+
+	it("keeps both edges inside the world, for many seeds", () => {
+		for (const seed of seeds) {
+			for (const s of generateTunnel(seed, c, 6000)) {
+				expect(s.top).toBeGreaterThanOrEqual(0);
+				expect(s.bottom).toBeLessThanOrEqual(c.world.height);
+			}
+		}
+	});
+
+	it("wanders the corridor vertically after the grace distance", () => {
+		const centres = generateTunnel("alpha", c, 6000)
+			.slice(graceSlices + 10)
+			.map((s) => (s.top + s.bottom) / 2);
+		expect(Math.max(...centres) - Math.min(...centres)).toBeGreaterThan(80);
+	});
+
+	it("places obstacles only past the grace distance and never in consecutive slices", () => {
+		for (const seed of seeds) {
+			const indices = obstacleIndices(generateTunnel(seed, c, 8000));
+			expect(indices.length).toBeGreaterThan(10);
+			for (const i of indices) {
+				expect(sliceDistance(c, i)).toBeGreaterThanOrEqual(c.ramp.graceDistance);
+			}
+			for (let k = 1; k < indices.length; k++) {
+				const gap = (indices[k] ?? 0) - (indices[k - 1] ?? 0);
+				expect(gap).toBeGreaterThan(1);
+			}
+		}
+	});
+
+	it("keeps the effective opening at least a helicopter plus clearance, for many seeds", () => {
+		const floor = c.helicopter.height + c.tunnel.clearance;
+		for (const seed of seeds) {
+			for (const s of generateTunnel(seed, c, 8000)) {
+				expect(opening(s)).toBeGreaterThanOrEqual(floor - 1e-9);
+			}
+		}
+	});
+
+	it("spaces successive obstacles by about one obstacleInterval", () => {
+		const indices = obstacleIndices(generateTunnel("alpha", c, 8000));
+		for (let k = 1; k < indices.length; k++) {
+			const spacing = sliceDistance(c, indices[k] ?? 0) - sliceDistance(c, indices[k - 1] ?? 0);
+			expect(spacing).toBeGreaterThanOrEqual(c.tunnel.obstacleInterval - c.tunnel.sliceWidth);
+			expect(spacing).toBeLessThanOrEqual(2 * c.tunnel.obstacleInterval);
+		}
+	});
+
+	it("is fully determined by the seed", () => {
+		expect(generateTunnel("alpha", c, 2000)).toEqual(generateTunnel("alpha", c, 2000));
+		expect(generateTunnel("alpha", c, 2000)).not.toEqual(generateTunnel("beta", c, 2000));
+	});
+
+	it("is a stable prefix: generating more slices does not change the earlier ones", () => {
+		const short = generateTunnel("gamma", c, 1500);
+		const long = generateTunnel("gamma", c, 4000);
+		expect(long.slice(0, 1500)).toEqual(short);
 	});
 });
 

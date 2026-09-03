@@ -7,6 +7,7 @@
 
 import type { Config } from "./config.js";
 import { rampGap, rampSpeed } from "./ramp.js";
+import { hashSeed, nextRandom } from "./rng.js";
 
 export interface Obstacle {
 	/** Which edge the block intrudes from. */
@@ -44,11 +45,64 @@ export function sliceDistance(config: Config, index: number): number {
 
 /** The first `sliceCount` slices of the tunnel for `seed`. Pure. */
 export function generateTunnel(seed: string, config: Config, sliceCount: number): Slice[] {
-	const centre = config.world.height / 2;
+	const worldHeight = config.world.height;
+	const graceDistance = config.ramp.graceDistance;
+
+	const { clearance, obstacleInterval } = config.tunnel;
+	const heliHeight = config.helicopter.height;
+
+	let rng = hashSeed(seed);
+	let centre = worldHeight / 2;
+	let target = centre;
+	let prevGap = rampGap(config, 0);
+	let prevBand = -1;
+	let prevHadObstacle = false;
+
 	const slices: Slice[] = [];
 	for (let i = 0; i < sliceCount; i++) {
-		const gap = rampGap(config, sliceDistance(config, i));
-		slices.push({ top: centre - gap / 2, bottom: centre + gap / 2, obstacle: null });
+		const distance = sliceDistance(config, i);
+		const gap = rampGap(config, distance);
+		const lo = gap / 2;
+		const hi = worldHeight - gap / 2;
+
+		if (distance < graceDistance) {
+			centre = worldHeight / 2;
+		} else {
+			// Room left in the edge-step budget after the ramp's own gap change.
+			const budget = Math.max(0, maxEdgeStep(config, distance) - Math.abs(gap - prevGap) / 2);
+			if (Math.abs(target - centre) <= budget) {
+				const [r, next] = nextRandom(rng);
+				rng = next;
+				target = lo + r * (hi - lo);
+			}
+			centre = clampTo(centre + clampTo(target - centre, -budget, budget), lo, hi);
+		}
+
+		// One obstacle at the start of each `obstacleInterval`-wide band past the
+		// grace distance; never on a slice adjacent to the previous obstacle.
+		let obstacle: Obstacle | null = null;
+		const band = Math.floor((distance - graceDistance) / obstacleInterval);
+		if (distance >= graceDistance && band !== prevBand && !prevHadObstacle) {
+			const maxDepth = gap - (heliHeight + clearance);
+			if (maxDepth > 0) {
+				const [side, afterSide] = nextRandom(rng);
+				const [size, afterSize] = nextRandom(afterSide);
+				rng = afterSize;
+				obstacle = {
+					edge: side < 0.5 ? "top" : "bottom",
+					depth: maxDepth * (0.4 + 0.6 * size),
+				};
+			}
+			prevBand = band;
+		}
+
+		slices.push({ top: centre - gap / 2, bottom: centre + gap / 2, obstacle });
+		prevHadObstacle = obstacle !== null;
+		prevGap = gap;
 	}
 	return slices;
+}
+
+function clampTo(value: number, min: number, max: number): number {
+	return value < min ? min : value > max ? max : value;
 }

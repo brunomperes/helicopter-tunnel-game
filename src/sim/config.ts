@@ -46,6 +46,8 @@ export interface Config {
 		readonly capGap: number;
 		/** Spacing between obstacles, px. */
 		readonly obstacleInterval: number;
+		/** Slack kept between the effective opening and the helicopter height, px. */
+		readonly clearance: number;
 	};
 
 	readonly ramp: {
@@ -81,6 +83,7 @@ export const defaultConfig: Config = {
 		startGap: 320,
 		capGap: 180,
 		obstacleInterval: 340,
+		clearance: 64,
 	},
 	ramp: {
 		distance: 4800,
