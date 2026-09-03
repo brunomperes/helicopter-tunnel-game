@@ -46,6 +46,10 @@ export interface Config {
 		readonly capGap: number;
 		/** Spacing between obstacles, px. */
 		readonly obstacleInterval: number;
+		/** Fewest slices an obstacle block spans. */
+		readonly obstacleMinSlices: number;
+		/** Most slices an obstacle block spans. */
+		readonly obstacleMaxSlices: number;
 		/** Slack kept between the effective opening and the helicopter height, px. */
 		readonly clearance: number;
 		/**
@@ -84,10 +88,12 @@ export const defaultConfig: Config = {
 		capSpeed: 360,
 	},
 	tunnel: {
-		sliceWidth: 12,
+		sliceWidth: 24,
 		startGap: 320,
 		capGap: 180,
 		obstacleInterval: 340,
+		obstacleMinSlices: 1,
+		obstacleMaxSlices: 7,
 		clearance: 64,
 		followFactor: 0.6,
 	},

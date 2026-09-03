@@ -33,6 +33,27 @@ function flyUntilCrash(seed: string, thrust = false): SimState {
 	return state;
 }
 
+/** Maximal runs of consecutive obstacle-bearing slices (one run per obstacle). */
+function obstacleGroups(slices: readonly Slice[]) {
+	const groups: Array<{ start: number; end: number; length: number; slices: Slice[] }> = [];
+	let i = 0;
+	while (i < slices.length) {
+		if (!slices[i]?.obstacle) {
+			i++;
+			continue;
+		}
+		const start = i;
+		const runSlices: Slice[] = [];
+		while (i < slices.length && slices[i]?.obstacle) {
+			const s = slices[i];
+			if (s) runSlices.push(s);
+			i++;
+		}
+		groups.push({ start, end: i - 1, length: runSlices.length, slices: runSlices });
+	}
+	return groups;
+}
+
 describe("rng", () => {
 	it("hashSeed is deterministic and differs by seed", () => {
 		expect(hashSeed("alpha")).toBe(hashSeed("alpha"));
@@ -116,10 +137,6 @@ describe("tunnel generation", () => {
 		}
 		return out;
 	}
-	/** Slice indices that carry an obstacle. */
-	const obstacleIndices = (slices: readonly Slice[]) =>
-		slices.flatMap((s, i) => (s.obstacle ? [i] : []));
-
 	it("opens with a centred, full-gap corridor and no obstacles through the grace distance", () => {
 		for (const s of generateTunnel("alpha", c, graceSlices)) {
 			expect(s.obstacle).toBeNull();
@@ -129,7 +146,11 @@ describe("tunnel generation", () => {
 	});
 
 	it("narrows the raw gap toward the cap once past the grace distance", () => {
-		const slices = generateTunnel("beta", c, graceSlices + Math.ceil(c.ramp.distance / 12) + 200);
+		const slices = generateTunnel(
+			"beta",
+			c,
+			graceSlices + Math.ceil(c.ramp.distance / c.tunnel.sliceWidth) + 200,
+		);
 		const midRamp = slices[graceSlices + Math.floor(c.ramp.distance / c.tunnel.sliceWidth / 2)];
 		const last = slices.at(-1);
 		if (!midRamp || !last) throw new Error("too few slices");
@@ -140,12 +161,12 @@ describe("tunnel generation", () => {
 	it("bounds the per-slice edge step by the vertical distance the helicopter can cover", () => {
 		// Worked from the default config. Slice-scroll time T = sliceWidth / speed.
 		// Reachable distance from rest = 0.5 * min(thrust - gravity, gravity) * T^2,
-		// capped by terminalVelocity * T. At speed 180: T = 12/180 = 1/15 s,
-		// 0.5 * 900 * (1/15)^2 = 2.0 px (well under the 34.7 px terminal cap).
-		expect(maxEdgeStep(c, 0)).toBeCloseTo(2.0, 6);
-		// At the cap speed 360: T = 12/360 = 1/30 s, 0.5 * 900 * (1/30)^2 = 0.5 px.
+		// capped by terminalVelocity * T. At speed 180: T = 24/180 = 2/15 s,
+		// 0.5 * 900 * (2/15)^2 = 8.0 px (well under the 69.3 px terminal cap).
+		expect(maxEdgeStep(c, 0)).toBeCloseTo(8.0, 6);
+		// At the cap speed 360: T = 24/360 = 1/15 s, 0.5 * 900 * (1/15)^2 = 2.0 px.
 		const atCap = maxEdgeStep(c, c.ramp.graceDistance + c.ramp.distance);
-		expect(atCap).toBeCloseTo(0.5, 6);
+		expect(atCap).toBeCloseTo(2.0, 6);
 		// Faster scroll later in the run means a tighter bound.
 		expect(atCap).toBeLessThan(maxEdgeStep(c, 0));
 	});
@@ -180,18 +201,69 @@ describe("tunnel generation", () => {
 		expect(Math.max(...centres) - Math.min(...centres)).toBeGreaterThan(80);
 	});
 
-	it("places obstacles only past the grace distance and never in consecutive slices", () => {
+	it("places obstacle blocks only past the grace distance, each parted by a clear slice", () => {
 		for (const seed of seeds) {
-			const indices = obstacleIndices(generateTunnel(seed, c, 8000));
-			expect(indices.length).toBeGreaterThan(10);
-			for (const i of indices) {
-				expect(sliceDistance(c, i)).toBeGreaterThanOrEqual(c.ramp.graceDistance);
+			const groups = obstacleGroups(generateTunnel(seed, c, 8000));
+			expect(groups.length).toBeGreaterThan(10);
+			for (const g of groups) {
+				expect(sliceDistance(c, g.start)).toBeGreaterThanOrEqual(c.ramp.graceDistance);
 			}
-			for (let k = 1; k < indices.length; k++) {
-				const gap = (indices[k] ?? 0) - (indices[k - 1] ?? 0);
-				expect(gap).toBeGreaterThan(1);
+			for (let k = 1; k < groups.length; k++) {
+				const clearSlices = (groups[k]?.start ?? 0) - (groups[k - 1]?.end ?? 0) - 1;
+				expect(clearSlices).toBeGreaterThanOrEqual(1);
 			}
 		}
+	});
+
+	it("makes each obstacle a block of slices sharing one edge and one depth", () => {
+		for (const seed of seeds) {
+			const slices = generateTunnel(seed, c, 8000);
+			// Drop a block still being generated at the very end of the range.
+			const groups = obstacleGroups(slices).filter((g) => g.end < slices.length - 1);
+			expect(groups.length).toBeGreaterThan(5);
+			for (const g of groups) {
+				expect(g.length).toBeGreaterThanOrEqual(c.tunnel.obstacleMinSlices);
+				expect(g.length).toBeLessThanOrEqual(c.tunnel.obstacleMaxSlices);
+				const edges = new Set(g.slices.map((s) => s.obstacle?.edge));
+				expect(edges.size).toBe(1);
+				const depth0 = g.slices[0]?.obstacle?.depth ?? 0;
+				for (const s of g.slices) expect(s.obstacle?.depth ?? 0).toBeCloseTo(depth0, 6);
+			}
+			// Blocks wider than one slice do occur.
+			expect(groups.some((g) => g.length > 1)).toBe(true);
+		}
+	});
+
+	it("holds the corridor centre fixed across an obstacle block (no wander under a block)", () => {
+		for (const seed of seeds) {
+			const slices = generateTunnel(seed, c, 8000);
+			for (const g of obstacleGroups(slices).filter((x) => x.end < slices.length - 1)) {
+				const centre0 = ((g.slices[0]?.top ?? 0) + (g.slices[0]?.bottom ?? 0)) / 2;
+				for (const s of g.slices) {
+					expect((s.top + s.bottom) / 2).toBeCloseTo(centre0, 6);
+				}
+				// Edges only move by the ramp's own gap-narrowing over the block —
+				// no corridor drift is layered on top.
+				const ramp =
+					(rampGap(c, sliceDistance(c, g.start)) - rampGap(c, sliceDistance(c, g.end))) / 2;
+				const tops = g.slices.map((s) => s.top);
+				expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(ramp + 1e-6);
+			}
+		}
+	});
+
+	it("varies obstacle block width within the configured slice range", () => {
+		const { obstacleMinSlices, obstacleMaxSlices } = c.tunnel;
+		const lengths = new Set<number>();
+		for (const seed of seeds) {
+			const slices = generateTunnel(seed, c, 8000);
+			for (const g of obstacleGroups(slices).filter((x) => x.end < slices.length - 1)) {
+				expect(g.length).toBeGreaterThanOrEqual(obstacleMinSlices);
+				expect(g.length).toBeLessThanOrEqual(obstacleMaxSlices);
+				lengths.add(g.length);
+			}
+		}
+		expect(lengths.size).toBeGreaterThan(1);
 	});
 
 	it("keeps the effective opening at least a helicopter plus clearance, for many seeds", () => {
@@ -203,10 +275,31 @@ describe("tunnel generation", () => {
 		}
 	});
 
-	it("spaces successive obstacles by about one obstacleInterval", () => {
-		const indices = obstacleIndices(generateTunnel("alpha", c, 8000));
-		for (let k = 1; k < indices.length; k++) {
-			const spacing = sliceDistance(c, indices[k] ?? 0) - sliceDistance(c, indices[k - 1] ?? 0);
+	it("keeps the opening clear through the whole of a mid-ramp obstacle block", () => {
+		// Blocks that sit entirely inside the narrowing ramp are where a depth sized
+		// off the block's leading (wider) gap would over-cut its trailing slices.
+		const floor = c.helicopter.height + c.tunnel.clearance;
+		let midRampBlocks = 0;
+		for (const seed of seeds) {
+			const slices = generateTunnel(seed, c, 8000);
+			for (const g of obstacleGroups(slices).filter((x) => x.end < slices.length - 1)) {
+				const startD = sliceDistance(c, g.start);
+				const endD = sliceDistance(c, g.end);
+				if (startD <= c.ramp.graceDistance || endD >= c.ramp.graceDistance + c.ramp.distance) {
+					continue;
+				}
+				midRampBlocks++;
+				for (const s of g.slices) expect(opening(s)).toBeGreaterThanOrEqual(floor - 1e-9);
+			}
+		}
+		expect(midRampBlocks).toBeGreaterThan(20);
+	});
+
+	it("spaces successive obstacle blocks by about one obstacleInterval", () => {
+		const groups = obstacleGroups(generateTunnel("alpha", c, 8000));
+		for (let k = 1; k < groups.length; k++) {
+			const spacing =
+				sliceDistance(c, groups[k]?.start ?? 0) - sliceDistance(c, groups[k - 1]?.start ?? 0);
 			expect(spacing).toBeGreaterThanOrEqual(c.tunnel.obstacleInterval - c.tunnel.sliceWidth);
 			expect(spacing).toBeLessThanOrEqual(2 * c.tunnel.obstacleInterval);
 		}
@@ -233,6 +326,20 @@ describe("tunnel generation", () => {
 			gen = r.gen;
 		}
 		expect(pieces).toEqual(oneShot);
+	});
+
+	it("resumes an obstacle block that straddles an extendTunnel boundary", () => {
+		const seed = "epsilon";
+		const oneShot = generateTunnel(seed, c, 2000);
+		const blocks = obstacleGroups(oneShot).filter((g) => g.length >= 3 && g.end < 1999);
+		expect(blocks.length).toBeGreaterThan(3);
+		for (const b of blocks.slice(0, 6)) {
+			// Cut generation one slice into the block, then finish it.
+			const cut = b.start + 1;
+			const first = extendTunnel(initTunnelGen(seed, c), c, cut);
+			const rest = extendTunnel(first.gen, c, 2000);
+			expect([...first.slices, ...rest.slices]).toEqual(oneShot);
+		}
 	});
 });
 
@@ -327,5 +434,86 @@ describe("sim lifecycle", () => {
 		state = step(state, true);
 		expect(state.phase).toBe("flying");
 		expect(state.tick).toBe(0);
+	});
+
+	/** A `flying` state parked so the helicopter overlaps tunnel slice `atIndex`. */
+	function flyingOverSlice(
+		seed: string,
+		slices: readonly Slice[],
+		gen: Parameters<typeof step>[0]["tunnelGen"],
+		atIndex: number,
+		helicopter: { y: number; vy: number },
+	): SimState {
+		const c = defaultConfig;
+		const heliX = c.helicopter.xFrac * c.world.width;
+		return {
+			...createInitialState(seed, c),
+			phase: "flying",
+			distance: atIndex * c.tunnel.sliceWidth + c.tunnel.sliceWidth / 2 - heliX,
+			tunnel: slices,
+			tunnelGen: gen,
+			helicopter,
+			prevThrust: true,
+		};
+	}
+
+	it("crashes into the body of a wide obstacle block, not only its leading slice", () => {
+		const c = defaultConfig;
+		const built = extendTunnel(initTunnelGen("zeta", c), c, 3000);
+		const blocks = obstacleGroups(built.slices).filter((g) => g.length >= 4 && g.end < 2500);
+		expect(blocks.length).toBeGreaterThan(3);
+		for (const b of blocks.slice(0, 5)) {
+			// An interior slice: the helicopter here overlaps only slices b.start+1..
+			// b.start+3, all past the block's leading edge.
+			const m = b.start + 2;
+			const slice = built.slices[m];
+			if (!slice?.obstacle) throw new Error("expected an obstacle slice");
+			const depth = slice.obstacle.depth;
+			const y = slice.obstacle.edge === "top" ? slice.top + depth - 1 : slice.bottom - depth + 1;
+			const state = flyingOverSlice("zeta", built.slices, built.gen, m, { y, vy: 0 });
+			expect(step(state, false).phase).toBe("wrecked");
+		}
+	});
+
+	it("lets the helicopter fly the length of a wide obstacle block through its clear opening", () => {
+		const c = defaultConfig;
+		let found:
+			| { built: ReturnType<typeof extendTunnel>; block: ReturnType<typeof obstacleGroups>[number] }
+			| undefined;
+		for (const seed of ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]) {
+			const built = extendTunnel(initTunnelGen(seed, c), c, 3000);
+			const block = obstacleGroups(built.slices).find(
+				(g) => g.length >= 5 && g.start > 60 && g.end < 1800,
+			);
+			if (block) {
+				found = { built, block };
+				break;
+			}
+		}
+		if (!found) throw new Error("no suitable obstacle block found");
+		const { built, block } = found;
+		const lead = built.slices[block.start];
+		if (!lead?.obstacle) throw new Error("expected an obstacle slice");
+		const depth = lead.obstacle.depth;
+		const openingCentre =
+			lead.obstacle.edge === "top"
+				? (lead.top + depth + lead.bottom) / 2
+				: (lead.top + (lead.bottom - depth)) / 2;
+
+		let state = flyingOverSlice("_", built.slices, built.gen, block.start, {
+			y: openingCentre,
+			vy: 0,
+		});
+		const heliX = c.helicopter.xFrac * c.world.width;
+		// The helicopter's trailing edge has cleared the block's last slice.
+		const cleared = (d: number) =>
+			d + heliX + c.helicopter.width / 2 > (block.end + 1) * c.tunnel.sliceWidth;
+		let i = 0;
+		for (; i < 5000 && state.phase === "flying" && !cleared(state.distance); i++) {
+			// Crude hold: thrust when below the opening centre (y-down), else coast.
+			state = step(state, state.helicopter.y > openingCentre);
+		}
+		expect(state.phase).toBe("flying");
+		expect(cleared(state.distance)).toBe(true);
 	});
 });
