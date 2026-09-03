@@ -8,6 +8,7 @@ import {
 	step,
 } from "./index.js";
 import { hashSeed, nextRandom } from "./rng.js";
+import { generateTunnel, maxEdgeStep } from "./tunnel.js";
 
 /** Run the sim from a fresh state through a scripted sequence of thrust inputs. */
 function run(seed: string, thrusts: boolean[]): SimState {
@@ -91,6 +92,54 @@ describe("difficulty ramp", () => {
 		const lateDelta = step(late, false).distance - late.distance;
 
 		expect(lateDelta / earlyDelta).toBeCloseTo(c.scroll.capSpeed / c.scroll.startSpeed, 4);
+	});
+});
+
+describe("tunnel generation", () => {
+	const c = defaultConfig;
+	const seeds = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"];
+	const graceSlices = Math.ceil(c.ramp.graceDistance / c.tunnel.sliceWidth);
+
+	/** Effective vertical opening of a slice after any obstacle. */
+	const opening = (s: { top: number; bottom: number; obstacle: { depth: number } | null }) =>
+		s.bottom - s.top - (s.obstacle?.depth ?? 0);
+
+	it("opens with a centred, full-gap corridor and no obstacles through the grace distance", () => {
+		const slices = generateTunnel("alpha", c, graceSlices);
+		for (const s of slices) {
+			expect(s.obstacle).toBeNull();
+			expect(s.bottom - s.top).toBeCloseTo(c.tunnel.startGap, 6);
+			expect((s.top + s.bottom) / 2).toBeCloseTo(c.world.height / 2, 6);
+		}
+	});
+
+	it("narrows the raw gap toward the cap once past the grace distance", () => {
+		const rampEndSlice = Math.ceil(
+			(c.ramp.graceDistance + c.ramp.distance) / c.tunnel.sliceWidth,
+		);
+		const slices = generateTunnel("beta", c, rampEndSlice + 200);
+		const midRamp = graceSlices + Math.floor(c.ramp.distance / c.tunnel.sliceWidth / 2);
+		expect(slices[midRamp].bottom - slices[midRamp].top).toBeCloseTo(
+			(c.tunnel.startGap + c.tunnel.capGap) / 2,
+			4,
+		);
+		const last = slices.at(-1);
+		if (!last) throw new Error("no slices");
+		expect(last.bottom - last.top).toBeCloseTo(c.tunnel.capGap, 6);
+	});
+
+	it("bounds the per-slice edge step by the vertical distance the helicopter can cover", () => {
+		// Worked from the default config. Slice-scroll time T = sliceWidth / speed.
+		// Reachable distance from rest = 0.5 * min(thrust - gravity, gravity) * T^2,
+		// capped by terminalVelocity * T. At speed 180: T = 12/180 = 1/15 s,
+		// 0.5 * 900 * (1/15)^2 = 2.0 px (well under the 34.7 px terminal cap).
+		expect(maxEdgeStep(c, 0)).toBeCloseTo(2.0, 6);
+		// At the cap speed 360: T = 12/360 = 1/30 s, 0.5 * 900 * (1/30)^2 = 0.5 px.
+		expect(maxEdgeStep(c, c.ramp.graceDistance + c.ramp.distance)).toBeCloseTo(0.5, 6);
+		// Faster scroll later in the run means a tighter bound.
+		expect(maxEdgeStep(c, c.ramp.graceDistance + c.ramp.distance)).toBeLessThan(
+			maxEdgeStep(c, 0),
+		);
 	});
 });
 
