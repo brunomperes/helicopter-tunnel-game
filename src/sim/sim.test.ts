@@ -116,9 +116,26 @@ describe("tunnel generation", () => {
 		}
 		return out;
 	}
-	/** Slice indices that carry an obstacle. */
-	const obstacleIndices = (slices: readonly Slice[]) =>
-		slices.flatMap((s, i) => (s.obstacle ? [i] : []));
+	/** Maximal runs of consecutive obstacle-bearing slices (one run per obstacle). */
+	function obstacleGroups(slices: readonly Slice[]) {
+		const groups: Array<{ start: number; end: number; length: number; slices: Slice[] }> = [];
+		let i = 0;
+		while (i < slices.length) {
+			if (!slices[i]?.obstacle) {
+				i++;
+				continue;
+			}
+			const start = i;
+			const run: Slice[] = [];
+			while (i < slices.length && slices[i]?.obstacle) {
+				const s = slices[i];
+				if (s) run.push(s);
+				i++;
+			}
+			groups.push({ start, end: i - 1, length: run.length, slices: run });
+		}
+		return groups;
+	}
 
 	it("opens with a centred, full-gap corridor and no obstacles through the grace distance", () => {
 		for (const s of generateTunnel("alpha", c, graceSlices)) {
@@ -140,12 +157,12 @@ describe("tunnel generation", () => {
 	it("bounds the per-slice edge step by the vertical distance the helicopter can cover", () => {
 		// Worked from the default config. Slice-scroll time T = sliceWidth / speed.
 		// Reachable distance from rest = 0.5 * min(thrust - gravity, gravity) * T^2,
-		// capped by terminalVelocity * T. At speed 180: T = 12/180 = 1/15 s,
-		// 0.5 * 900 * (1/15)^2 = 2.0 px (well under the 34.7 px terminal cap).
-		expect(maxEdgeStep(c, 0)).toBeCloseTo(2.0, 6);
-		// At the cap speed 360: T = 12/360 = 1/30 s, 0.5 * 900 * (1/30)^2 = 0.5 px.
+		// capped by terminalVelocity * T. At speed 180: T = 24/180 = 2/15 s,
+		// 0.5 * 900 * (2/15)^2 = 8.0 px (well under the 69.3 px terminal cap).
+		expect(maxEdgeStep(c, 0)).toBeCloseTo(8.0, 6);
+		// At the cap speed 360: T = 24/360 = 1/15 s, 0.5 * 900 * (1/15)^2 = 2.0 px.
 		const atCap = maxEdgeStep(c, c.ramp.graceDistance + c.ramp.distance);
-		expect(atCap).toBeCloseTo(0.5, 6);
+		expect(atCap).toBeCloseTo(2.0, 6);
 		// Faster scroll later in the run means a tighter bound.
 		expect(atCap).toBeLessThan(maxEdgeStep(c, 0));
 	});
@@ -180,16 +197,32 @@ describe("tunnel generation", () => {
 		expect(Math.max(...centres) - Math.min(...centres)).toBeGreaterThan(80);
 	});
 
-	it("places obstacles only past the grace distance and never in consecutive slices", () => {
+	it("places obstacle blocks only past the grace distance, each parted by a clear slice", () => {
 		for (const seed of seeds) {
-			const indices = obstacleIndices(generateTunnel(seed, c, 8000));
-			expect(indices.length).toBeGreaterThan(10);
-			for (const i of indices) {
-				expect(sliceDistance(c, i)).toBeGreaterThanOrEqual(c.ramp.graceDistance);
+			const groups = obstacleGroups(generateTunnel(seed, c, 8000));
+			expect(groups.length).toBeGreaterThan(10);
+			for (const g of groups) {
+				expect(sliceDistance(c, g.start)).toBeGreaterThanOrEqual(c.ramp.graceDistance);
 			}
-			for (let k = 1; k < indices.length; k++) {
-				const gap = (indices[k] ?? 0) - (indices[k - 1] ?? 0);
-				expect(gap).toBeGreaterThan(1);
+			for (let k = 1; k < groups.length; k++) {
+				const clearSlices = (groups[k]?.start ?? 0) - (groups[k - 1]?.end ?? 0) - 1;
+				expect(clearSlices).toBeGreaterThanOrEqual(1);
+			}
+		}
+	});
+
+	it("makes each obstacle a block of several slices sharing one edge and depth", () => {
+		for (const seed of seeds) {
+			const slices = generateTunnel(seed, c, 8000);
+			// Drop a block still being generated at the very end of the range.
+			const groups = obstacleGroups(slices).filter((g) => g.end < slices.length - 1);
+			expect(groups.length).toBeGreaterThan(5);
+			for (const g of groups) {
+				expect(g.length).toBeGreaterThanOrEqual(c.tunnel.obstacleMinSlices);
+				const edges = new Set(g.slices.map((s) => s.obstacle?.edge));
+				expect(edges.size).toBe(1);
+				const depth0 = g.slices[0]?.obstacle?.depth ?? 0;
+				for (const s of g.slices) expect(s.obstacle?.depth ?? 0).toBeCloseTo(depth0, 6);
 			}
 		}
 	});
@@ -203,10 +236,11 @@ describe("tunnel generation", () => {
 		}
 	});
 
-	it("spaces successive obstacles by about one obstacleInterval", () => {
-		const indices = obstacleIndices(generateTunnel("alpha", c, 8000));
-		for (let k = 1; k < indices.length; k++) {
-			const spacing = sliceDistance(c, indices[k] ?? 0) - sliceDistance(c, indices[k - 1] ?? 0);
+	it("spaces successive obstacle blocks by about one obstacleInterval", () => {
+		const groups = obstacleGroups(generateTunnel("alpha", c, 8000));
+		for (let k = 1; k < groups.length; k++) {
+			const spacing =
+				sliceDistance(c, groups[k]?.start ?? 0) - sliceDistance(c, groups[k - 1]?.start ?? 0);
 			expect(spacing).toBeGreaterThanOrEqual(c.tunnel.obstacleInterval - c.tunnel.sliceWidth);
 			expect(spacing).toBeLessThanOrEqual(2 * c.tunnel.obstacleInterval);
 		}

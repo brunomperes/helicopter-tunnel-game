@@ -58,8 +58,14 @@ export interface TunnelGen {
 	readonly prevGap: number;
 	/** Obstacle band index of the last generated slice. */
 	readonly prevBand: number;
-	/** Whether the last generated slice carried an obstacle. */
-	readonly prevHadObstacle: boolean;
+	/** Slices of the current obstacle block still to stamp (0 when none is open). */
+	readonly obstacleRemaining: number;
+	/** Edge the open obstacle block intrudes from. */
+	readonly obstacleEdge: Obstacle["edge"];
+	/** Depth of the open obstacle block, px. */
+	readonly obstacleDepth: number;
+	/** Clear slices still required before another obstacle block may start. */
+	readonly clearDebt: number;
 	/** Index of the next slice to generate. */
 	readonly nextIndex: number;
 }
@@ -72,7 +78,10 @@ export function initTunnelGen(seed: string, config: Config): TunnelGen {
 		target: config.world.height / 2,
 		prevGap: rampGap(config, 0),
 		prevBand: -1,
-		prevHadObstacle: false,
+		obstacleRemaining: 0,
+		obstacleEdge: "top",
+		obstacleDepth: 0,
+		clearDebt: 0,
 		nextIndex: 0,
 	};
 }
@@ -89,10 +98,11 @@ export function extendTunnel(
 ): { slices: Slice[]; gen: TunnelGen } {
 	const worldHeight = config.world.height;
 	const graceDistance = config.ramp.graceDistance;
-	const { clearance, obstacleInterval } = config.tunnel;
+	const { sliceWidth, clearance, obstacleInterval, obstacleMinSlices } = config.tunnel;
 	const heliHeight = config.helicopter.height;
 
-	let { rng, centre, target, prevGap, prevBand, prevHadObstacle } = gen;
+	let { rng, centre, target, prevGap, prevBand, obstacleRemaining, obstacleEdge, obstacleDepth, clearDebt } =
+		gen;
 	const slices: Slice[] = [];
 
 	for (let i = gen.nextIndex; i < toIndex; i++) {
@@ -116,28 +126,40 @@ export function extendTunnel(
 			centre = clampTo(centre + clampTo(target - centre, -budget, budget), lo, hi);
 		}
 
-		// One obstacle at the start of each `obstacleInterval`-wide band past the
-		// grace distance; never on a slice adjacent to the previous obstacle. The
-		// first band (band 0) is left clear so the run has an obstacle-free stretch
-		// to settle into after the grace corridor.
+		// Obstacles past the grace distance: one block per `obstacleInterval`-wide
+		// band, spanning several slices from a single edge at one depth. Band 0 is
+		// left clear so the run has an obstacle-free stretch to settle into after
+		// the grace corridor. Distinct blocks are always parted by a clear slice.
 		let obstacle: Obstacle | null = null;
-		const band = Math.floor((distance - graceDistance) / obstacleInterval);
-		if (band >= 1 && band !== prevBand && !prevHadObstacle) {
-			const maxDepth = gap - (heliHeight + clearance);
-			if (maxDepth > 0) {
-				const [side, afterSide] = nextRandom(rng);
-				const [size, afterSize] = nextRandom(afterSide);
-				rng = afterSize;
-				obstacle = {
-					edge: side < 0.5 ? "top" : "bottom",
-					depth: maxDepth * (0.4 + 0.6 * size),
-				};
+		if (obstacleRemaining > 0) {
+			obstacle = { edge: obstacleEdge, depth: obstacleDepth };
+			obstacleRemaining -= 1;
+			if (obstacleRemaining === 0) clearDebt = 1;
+		} else if (clearDebt > 0) {
+			clearDebt -= 1;
+		} else {
+			const band = Math.floor((distance - graceDistance) / obstacleInterval);
+			if (band >= 1 && band !== prevBand) {
+				prevBand = band;
+				const span = obstacleMinSlices;
+				// Depth must clear the helicopter on every slice of the span, so size
+				// it against the narrowest raw gap the span reaches (its far edge).
+				const spanEndGap = rampGap(config, distance + (span - 1) * sliceWidth);
+				const maxDepth = Math.min(gap, spanEndGap) - (heliHeight + clearance);
+				if (maxDepth > 0) {
+					const [side, afterSide] = nextRandom(rng);
+					const [size, afterSize] = nextRandom(afterSide);
+					rng = afterSize;
+					obstacleEdge = side < 0.5 ? "top" : "bottom";
+					obstacleDepth = maxDepth * (0.4 + 0.6 * size);
+					obstacle = { edge: obstacleEdge, depth: obstacleDepth };
+					obstacleRemaining = span - 1;
+					if (obstacleRemaining === 0) clearDebt = 1;
+				}
 			}
-			prevBand = band;
 		}
 
 		slices.push({ top: centre - gap / 2, bottom: centre + gap / 2, obstacle });
-		prevHadObstacle = obstacle !== null;
 		prevGap = gap;
 	}
 
@@ -149,7 +171,10 @@ export function extendTunnel(
 			target,
 			prevGap,
 			prevBand,
-			prevHadObstacle,
+			obstacleRemaining,
+			obstacleEdge,
+			obstacleDepth,
+			clearDebt,
 			nextIndex: Math.max(gen.nextIndex, toIndex),
 		},
 	};
