@@ -146,7 +146,11 @@ describe("tunnel generation", () => {
 	});
 
 	it("narrows the raw gap toward the cap once past the grace distance", () => {
-		const slices = generateTunnel("beta", c, graceSlices + Math.ceil(c.ramp.distance / 12) + 200);
+		const slices = generateTunnel(
+			"beta",
+			c,
+			graceSlices + Math.ceil(c.ramp.distance / c.tunnel.sliceWidth) + 200,
+		);
 		const midRamp = slices[graceSlices + Math.floor(c.ramp.distance / c.tunnel.sliceWidth / 2)];
 		const last = slices.at(-1);
 		if (!midRamp || !last) throw new Error("too few slices");
@@ -225,6 +229,38 @@ describe("tunnel generation", () => {
 				for (const s of g.slices) expect(s.obstacle?.depth ?? 0).toBeCloseTo(depth0, 6);
 			}
 		}
+	});
+
+	it("holds the corridor centre fixed across an obstacle block (no wander under a block)", () => {
+		for (const seed of seeds) {
+			const slices = generateTunnel(seed, c, 8000);
+			for (const g of obstacleGroups(slices).filter((x) => x.end < slices.length - 1)) {
+				const centre0 = ((g.slices[0]?.top ?? 0) + (g.slices[0]?.bottom ?? 0)) / 2;
+				for (const s of g.slices) {
+					expect((s.top + s.bottom) / 2).toBeCloseTo(centre0, 6);
+				}
+				// Edges only move by the ramp's own gap-narrowing over the block —
+				// no corridor drift is layered on top.
+				const ramp =
+					(rampGap(c, sliceDistance(c, g.start)) - rampGap(c, sliceDistance(c, g.end))) / 2;
+				const tops = g.slices.map((s) => s.top);
+				expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(ramp + 1e-6);
+			}
+		}
+	});
+
+	it("varies obstacle block width within the configured slice range", () => {
+		const { obstacleMinSlices, obstacleMaxSlices } = c.tunnel;
+		const lengths = new Set<number>();
+		for (const seed of seeds) {
+			const slices = generateTunnel(seed, c, 8000);
+			for (const g of obstacleGroups(slices).filter((x) => x.end < slices.length - 1)) {
+				expect(g.length).toBeGreaterThanOrEqual(obstacleMinSlices);
+				expect(g.length).toBeLessThanOrEqual(obstacleMaxSlices);
+				lengths.add(g.length);
+			}
+		}
+		expect(lengths.size).toBeGreaterThan(1);
 	});
 
 	it("keeps the effective opening at least a helicopter plus clearance, for many seeds", () => {

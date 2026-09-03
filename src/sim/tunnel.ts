@@ -98,11 +98,21 @@ export function extendTunnel(
 ): { slices: Slice[]; gen: TunnelGen } {
 	const worldHeight = config.world.height;
 	const graceDistance = config.ramp.graceDistance;
-	const { sliceWidth, clearance, obstacleInterval, obstacleMinSlices } = config.tunnel;
+	const { sliceWidth, clearance, obstacleInterval, obstacleMinSlices, obstacleMaxSlices } =
+		config.tunnel;
 	const heliHeight = config.helicopter.height;
 
-	let { rng, centre, target, prevGap, prevBand, obstacleRemaining, obstacleEdge, obstacleDepth, clearDebt } =
-		gen;
+	let {
+		rng,
+		centre,
+		target,
+		prevGap,
+		prevBand,
+		obstacleRemaining,
+		obstacleEdge,
+		obstacleDepth,
+		clearDebt,
+	} = gen;
 	const slices: Slice[] = [];
 
 	for (let i = gen.nextIndex; i < toIndex; i++) {
@@ -111,7 +121,13 @@ export function extendTunnel(
 		const lo = gap / 2;
 		const hi = worldHeight - gap / 2;
 
-		if (distance < graceDistance) {
+		// The corridor centre is held fixed for the whole span of an open block, so
+		// the block carries no corridor wander and reads as a level-edged rectangle
+		// (the ramp still narrows the gap by its usual sub-pixel-per-slice amount).
+		const inBlock = obstacleRemaining > 0;
+		if (inBlock) {
+			// centre held.
+		} else if (distance < graceDistance) {
 			centre = worldHeight / 2;
 		} else {
 			// Room left in the edge-step budget (a fraction of what the craft can
@@ -141,11 +157,15 @@ export function extendTunnel(
 			const band = Math.floor((distance - graceDistance) / obstacleInterval);
 			if (band >= 1 && band !== prevBand) {
 				prevBand = band;
-				const span = obstacleMinSlices;
-				// Depth must clear the helicopter on every slice of the span, so size
-				// it against the narrowest raw gap the span reaches (its far edge).
+				const [spanR, afterSpan] = nextRandom(rng);
+				rng = afterSpan;
+				const span =
+					obstacleMinSlices + Math.floor(spanR * (obstacleMaxSlices - obstacleMinSlices + 1));
+				// One depth for the whole block: size it against the narrowest raw gap
+				// the span reaches (its trailing edge, where the ramp has narrowed
+				// most) so the opening clears the helicopter on every slice.
 				const spanEndGap = rampGap(config, distance + (span - 1) * sliceWidth);
-				const maxDepth = Math.min(gap, spanEndGap) - (heliHeight + clearance);
+				const maxDepth = spanEndGap - (heliHeight + clearance);
 				if (maxDepth > 0) {
 					const [side, afterSide] = nextRandom(rng);
 					const [size, afterSize] = nextRandom(afterSide);
