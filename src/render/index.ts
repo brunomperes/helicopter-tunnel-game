@@ -1,11 +1,11 @@
 /**
  * Draws a sim state onto a canvas context. Read-only with respect to the sim.
  *
- * SCAFFOLD STATUS: draws the helicopter, HUD and phase overlays. Tunnel edges and
- * obstacles are drawn as a placeholder frame until sim generation exists.
+ * SCAFFOLD STATUS: draws the tunnel (edges + obstacles), helicopter, HUD and
+ * phase overlays. Colours are the placeholder palette; the art pass is deferred.
  */
 
-import type { SimState } from "../sim/index.js";
+import type { SimState, Slice } from "../sim/index.js";
 import { theme } from "../theme.js";
 
 export interface HudModel {
@@ -18,7 +18,7 @@ export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudM
 	ctx.fillStyle = theme.background;
 	ctx.fillRect(0, 0, width, height);
 
-	drawTunnelPlaceholder(ctx, state);
+	drawTunnel(ctx, state);
 	if (state.phase !== "attract") drawHelicopter(ctx, state);
 	drawHud(ctx, state, hud);
 
@@ -26,13 +26,39 @@ export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudM
 	if (state.phase === "wrecked") drawWrecked(ctx, state, hud);
 }
 
-// TODO: replace with real tunnel edges + obstacles from the sim (docs/adr/0003).
-function drawTunnelPlaceholder(ctx: CanvasRenderingContext2D, state: SimState): void {
+/**
+ * Fills the solid rock above the top edge and below the bottom edge for every
+ * slice currently on screen, then stamps each slice's obstacle. Slice `i` covers
+ * tunnel distance `[i * sliceWidth, (i + 1) * sliceWidth)`; with the run scrolled
+ * `state.distance` px, its left edge sits at screen-x `i * sliceWidth - distance`.
+ */
+function drawTunnel(ctx: CanvasRenderingContext2D, state: SimState): void {
 	const { width, height } = state.config.world;
-	const margin = 60;
+	const { sliceWidth } = state.config.tunnel;
+	const first = Math.max(0, Math.floor(state.distance / sliceWidth));
+	const last = Math.ceil((state.distance + width) / sliceWidth);
+
 	ctx.fillStyle = theme.tunnel;
-	ctx.fillRect(0, 0, width, margin);
-	ctx.fillRect(0, height - margin, width, margin);
+	for (let i = first; i <= last; i++) {
+		const slice = state.tunnel[i];
+		if (!slice) continue;
+		const x = i * sliceWidth - state.distance;
+		// +1 keeps neighbouring slices seamless under the non-smoothed transform.
+		const w = sliceWidth + 1;
+		ctx.fillRect(x, 0, w, slice.top);
+		ctx.fillRect(x, slice.bottom, w, height - slice.bottom);
+		drawObstacle(ctx, slice, x, w);
+	}
+}
+
+function drawObstacle(ctx: CanvasRenderingContext2D, slice: Slice, x: number, w: number): void {
+	const { obstacle } = slice;
+	if (!obstacle) return;
+	if (obstacle.edge === "top") {
+		ctx.fillRect(x, slice.top, w, obstacle.depth);
+	} else {
+		ctx.fillRect(x, slice.bottom - obstacle.depth, w, obstacle.depth);
+	}
 }
 
 function drawHelicopter(ctx: CanvasRenderingContext2D, state: SimState): void {
