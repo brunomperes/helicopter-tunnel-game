@@ -48,7 +48,7 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 			accumulator -= stepMs;
 		}
 
-		render(ctx, state, { best });
+		render(ctx, state, { best, dev: import.meta.env.DEV });
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);

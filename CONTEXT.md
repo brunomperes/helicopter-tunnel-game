@@ -58,6 +58,8 @@ _Avoid_: Key
 **Ramp**:
 The difficulty progression, expressed as a function of distance: scroll speed rises
 and the gap narrows from their starting values to their caps, then hold constant.
+Speed eases in more gradually than the gap (it ramps over a stretched distance) so a
+run does not accelerate sharply.
 _Avoid_: Difficulty curve, progression, scaling
 
 ## Run states

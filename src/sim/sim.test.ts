@@ -87,17 +87,25 @@ describe("difficulty ramp", () => {
 		expect(rampSpeed(c, c.ramp.graceDistance)).toBe(c.scroll.startSpeed);
 	});
 
-	it("eases scroll speed to the cap across the ramp, then holds it", () => {
-		const midpoint = c.ramp.graceDistance + c.ramp.distance / 2;
+	it("eases scroll speed to the cap across the stretched speed ramp, then holds it", () => {
+		const speedSpan = c.ramp.distance * c.ramp.speedDistanceScale;
+		const midpoint = c.ramp.graceDistance + speedSpan / 2;
 		const expectedMid = (c.scroll.startSpeed + c.scroll.capSpeed) / 2;
 		expect(rampSpeed(c, midpoint)).toBeCloseTo(expectedMid, 6);
 
-		const rampEnd = c.ramp.graceDistance + c.ramp.distance;
+		const rampEnd = c.ramp.graceDistance + speedSpan;
 		expect(rampSpeed(c, rampEnd)).toBe(c.scroll.capSpeed);
 		expect(rampSpeed(c, rampEnd * 10)).toBe(c.scroll.capSpeed);
 	});
 
-	it("narrows the gap from start to cap on the same schedule as speed", () => {
+	it("eases speed in more gradually than the gap", () => {
+		const gapEnd = c.ramp.graceDistance + c.ramp.distance;
+		// Gap has reached its cap here; speed has not.
+		expect(rampGap(c, gapEnd)).toBe(c.tunnel.capGap);
+		expect(rampSpeed(c, gapEnd)).toBeLessThan(c.scroll.capSpeed);
+	});
+
+	it("narrows the gap from start to cap across ramp.distance", () => {
 		expect(rampGap(c, 0)).toBe(c.tunnel.startGap);
 		expect(rampGap(c, c.ramp.graceDistance)).toBe(c.tunnel.startGap);
 
@@ -113,7 +121,10 @@ describe("difficulty ramp", () => {
 		const flying: SimState = { ...createInitialState("seed", c), phase: "flying" };
 		const earlyDelta = step(flying, false).distance - flying.distance;
 
-		const late: SimState = { ...flying, distance: c.ramp.graceDistance + c.ramp.distance };
+		const late: SimState = {
+			...flying,
+			distance: c.ramp.graceDistance + c.ramp.distance * c.ramp.speedDistanceScale,
+		};
 		const lateDelta = step(late, false).distance - late.distance;
 
 		expect(lateDelta / earlyDelta).toBeCloseTo(c.scroll.capSpeed / c.scroll.startSpeed, 4);
@@ -159,14 +170,18 @@ describe("tunnel generation", () => {
 	});
 
 	it("bounds the per-slice edge step by the vertical distance the helicopter can cover", () => {
-		// Worked from the default config. Slice-scroll time T = sliceWidth / speed.
-		// Reachable distance from rest = 0.5 * min(thrust - gravity, gravity) * T^2,
-		// capped by terminalVelocity * T. At speed 180: T = 24/180 = 2/15 s,
-		// 0.5 * 900 * (2/15)^2 = 8.0 px (well under the 69.3 px terminal cap).
-		expect(maxEdgeStep(c, 0)).toBeCloseTo(8.0, 6);
-		// At the cap speed 360: T = 24/360 = 1/15 s, 0.5 * 900 * (1/15)^2 = 2.0 px.
-		const atCap = maxEdgeStep(c, c.ramp.graceDistance + c.ramp.distance);
-		expect(atCap).toBeCloseTo(2.0, 6);
+		// Slice-scroll time T = sliceWidth / speed; reachable distance from rest is
+		// 0.5 * min(thrust - gravity, gravity) * T^2, capped by terminalVelocity * T.
+		const reach = (speed: number) => {
+			const t = c.tunnel.sliceWidth / speed;
+			const accel = Math.min(c.physics.thrust - c.physics.gravity, c.physics.gravity);
+			return Math.min(0.5 * accel * t * t, c.physics.terminalVelocity * t);
+		};
+		expect(maxEdgeStep(c, 0)).toBeCloseTo(reach(c.scroll.startSpeed), 6);
+
+		const speedRampEnd = c.ramp.graceDistance + c.ramp.distance * c.ramp.speedDistanceScale;
+		const atCap = maxEdgeStep(c, speedRampEnd);
+		expect(atCap).toBeCloseTo(reach(c.scroll.capSpeed), 6);
 		// Faster scroll later in the run means a tighter bound.
 		expect(atCap).toBeLessThan(maxEdgeStep(c, 0));
 	});
