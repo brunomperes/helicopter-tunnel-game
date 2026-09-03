@@ -8,7 +8,14 @@ import {
 	step,
 } from "./index.js";
 import { hashSeed, nextRandom } from "./rng.js";
-import { generateTunnel, maxEdgeStep, type Slice, sliceDistance } from "./tunnel.js";
+import {
+	extendTunnel,
+	generateTunnel,
+	initTunnelGen,
+	maxEdgeStep,
+	type Slice,
+	sliceDistance,
+} from "./tunnel.js";
 
 /** Run the sim from a fresh state through a scripted sequence of thrust inputs. */
 function run(seed: string, thrusts: boolean[]): SimState {
@@ -143,12 +150,16 @@ describe("tunnel generation", () => {
 		expect(atCap).toBeLessThan(maxEdgeStep(c, 0));
 	});
 
-	it("never moves an edge between adjacent slices by more than maxEdgeStep, for many seeds", () => {
+	it("moves each edge between adjacent slices by less than the craft can cover, for many seeds", () => {
 		for (const seed of seeds) {
 			for (const [i, prev, curr] of adjacent(generateTunnel(seed, c, 6000))) {
-				const limit = maxEdgeStep(c, sliceDistance(c, i)) + 1e-9;
+				const reachable = maxEdgeStep(c, sliceDistance(c, i));
+				// Clamped to followFactor of what the helicopter can physically cover,
+				// leaving the player reaction headroom (ADR-0003 "clamped below").
+				const limit = c.tunnel.followFactor * reachable + 1e-9;
 				expect(Math.abs(curr.top - prev.top)).toBeLessThanOrEqual(limit);
 				expect(Math.abs(curr.bottom - prev.bottom)).toBeLessThanOrEqual(limit);
+				expect(limit).toBeLessThan(reachable);
 			}
 		}
 	});
@@ -211,6 +222,18 @@ describe("tunnel generation", () => {
 		const long = generateTunnel("gamma", c, 4000);
 		expect(long.slice(0, 1500)).toEqual(short);
 	});
+
+	it("extends incrementally to the same tunnel as one-shot generation", () => {
+		const oneShot = generateTunnel("delta", c, 900);
+		let gen = initTunnelGen("delta", c);
+		const pieces: Slice[] = [];
+		for (const to of [100, 250, 251, 600, 900]) {
+			const r = extendTunnel(gen, c, to);
+			pieces.push(...r.slices);
+			gen = r.gen;
+		}
+		expect(pieces).toEqual(oneShot);
+	});
 });
 
 describe("sim lifecycle", () => {
@@ -238,6 +261,50 @@ describe("sim lifecycle", () => {
 		expect(state.phase).toBe("wrecked");
 		expect(state.distance).toBeGreaterThan(0);
 		expect(state.restartLock).toBe(defaultConfig.restartLockTicks);
+	});
+
+	it("crashes into the tunnel floor edge, well above the world floor, when never thrusting", () => {
+		const c = defaultConfig;
+		const crashed = flyUntilCrash("alpha");
+		const half = c.helicopter.height / 2;
+		// The grace corridor's floor edge sits at worldHeight/2 + startGap/2 = 430,
+		// a full 100px above the 540 world floor the stub used.
+		const graceFloor = c.world.height / 2 + c.tunnel.startGap / 2;
+		expect(crashed.phase).toBe("wrecked");
+		expect(crashed.helicopter.y + half).toBeGreaterThan(graceFloor - c.tunnel.sliceWidth);
+		expect(crashed.helicopter.y + half).toBeLessThan(c.world.height - 20);
+	});
+
+	it("does not crash inside the centred, obstacle-free grace corridor while roughly hovering", () => {
+		// Pulsing thrust every other tick keeps the helicopter within a few px of
+		// the centre. The grace corridor (gap 320, centred, no obstacles) is wide
+		// enough that this never crashes before the ramp begins.
+		const c = defaultConfig;
+		let state = step(createInitialState("alpha", c), true);
+		for (let i = 0; state.distance < c.ramp.graceDistance - 20 && state.phase === "flying"; i++) {
+			state = step(state, i % 2 === 0);
+		}
+		expect(state.phase).toBe("flying");
+		expect(state.distance).toBeGreaterThan(c.ramp.graceDistance - 30);
+	});
+
+	it("crashes into the tunnel ceiling edge when thrust is held continuously", () => {
+		const c = defaultConfig;
+		const crashed = flyUntilCrash("alpha", true);
+		const half = c.helicopter.height / 2;
+		const graceCeil = c.world.height / 2 - c.tunnel.startGap / 2;
+		expect(crashed.phase).toBe("wrecked");
+		expect(crashed.helicopter.y - half).toBeGreaterThanOrEqual(0);
+		expect(crashed.helicopter.y - half).toBeLessThan(graceCeil + c.tunnel.sliceWidth);
+	});
+
+	it("keeps the generated tunnel at least a screen ahead of the helicopter", () => {
+		const c = defaultConfig;
+		let state = step(createInitialState("alpha", c), true);
+		for (let i = 0; i < 500 && state.phase === "flying"; i++) state = step(state, i % 3 === 0);
+		const heliLead = state.distance + c.helicopter.xFrac * c.world.width;
+		const generatedTo = state.tunnel.length * c.tunnel.sliceWidth;
+		expect(generatedTo).toBeGreaterThan(heliLead + c.world.width);
 	});
 
 	it("holds altitude better while thrusting than while falling", () => {
