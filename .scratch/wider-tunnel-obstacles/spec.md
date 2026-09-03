@@ -1,6 +1,6 @@
 # Wider slices and multi-slice obstacles
 
-Status: ready-for-agent
+Status: done (see issues/01-wider-slices-and-multi-slice-obstacles.md)
 
 ## Problem Statement
 

@@ -14,52 +14,73 @@ Full detail, rationale, and user stories: `.scratch/wider-tunnel-obstacles/spec.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
+
+## Resolution
+
+Implemented and merged to `main` in commits `0c086ec` → `f195d22` →
+`e225a3e` → `af5d9cd` → `f8d6990` → `950d3bf` (TDD cycles 1–8, plus the
+`obstacleMinSlices` 3→1 follow-up). Changes were contained to `src/sim/config.ts`,
+`src/sim/tunnel.ts`, `src/sim/sim.test.ts`, and `docs/adr/0003-tunnel-solvability.md`;
+`collision.ts` and `render/index.ts` were not touched. `npm test` passes (36 tests).
 
 ## Acceptance criteria
 
-- [ ] `Config.tunnel.sliceWidth` is widened from its 12 px placeholder to a
+- [x] `Config.tunnel.sliceWidth` is widened from its 12 px placeholder to a
       larger placeholder value; the generation math assumes no specific value.
-- [ ] `Config.tunnel` gains `obstacleMinSlices` and `obstacleMaxSlices` (integers
+      (`sliceWidth: 24`; `tunnel.ts` derives all timing/step math from it.)
+- [x] `Config.tunnel` gains `obstacleMinSlices` and `obstacleMaxSlices` (integers
       `>= 1`); each Obstacle's span is drawn uniformly from `[min, max]` off the
-      Seed RNG, in the same stream as `edge` and `depth`.
-- [ ] `Slice` and `Obstacle` interfaces are unchanged; `collision.ts` and
+      Seed RNG, in the same stream as `edge` and `depth`. (`1`/`7`; span drawn
+      before `side`/`size` in the same `nextRandom` chain.)
+- [x] `Slice` and `Obstacle` interfaces are unchanged; `collision.ts` and
       `render/index.ts` are unchanged.
-- [ ] An Obstacle stamps identical `{ edge, depth }` onto every Slice of its span.
-- [ ] While an Obstacle is placed, the Gap centre is held constant at its
+- [x] An Obstacle stamps identical `{ edge, depth }` onto every Slice of its span.
+- [x] While an Obstacle is placed, the Gap centre is held constant at its
       first-Slice value; `top` and `bottom` are level across the span. Centre
       drift resumes on the first clear Slice after the span.
-- [ ] `depth` uses `maxDepth * (0.4 + 0.6 * r)` with `maxDepth` computed from the
-      smallest raw Gap across the span, so
+- [x] `depth` uses `maxDepth * (0.4 + 0.6 * r)` with `maxDepth` computed from the
+      smallest raw Gap across the span (`spanEndGap`), so
       `gap - depth >= helicopter.height + clearance` on every Slice of the span.
-- [ ] At least one Slice with `obstacle: null` separates any two Obstacle groups
-      (replaces "never two consecutive obstacle slices").
-- [ ] Band gating is unchanged: at most one Obstacle starts per
+- [x] At least one Slice with `obstacle: null` separates any two Obstacle groups
+      (`clearDebt` set to 1 when a block ends).
+- [x] Band gating is unchanged: at most one Obstacle starts per
       `obstacleInterval` band past `graceDistance`; band 0 stays clear; the grace
       distance stays Obstacle-free.
-- [ ] A span that begins near an `extendTunnel` call boundary is fully resumable
-      from `TunnelGen` alone; stable-prefix and incremental-equals-one-shot
-      guarantees hold, including when a span straddles a boundary.
-- [ ] `maxEdgeStep` formula is unchanged; the per-Slice edge-step bound
+- [x] A span that begins near an `extendTunnel` call boundary is fully resumable
+      from `TunnelGen` alone (`obstacleRemaining` / `obstacleEdge` /
+      `obstacleDepth` / `clearDebt` carried in the walk state); stable-prefix and
+      incremental-equals-one-shot guarantees hold, including when a span straddles
+      a boundary.
+- [x] `maxEdgeStep` formula is unchanged; the per-Slice edge-step bound
       (`followFactor * maxEdgeStep`) holds for every adjacent Slice pair at the
       new `sliceWidth`, across many Seeds.
-- [ ] Tests updated / added at the existing seam (`generateTunnel` /
+- [x] Tests updated / added at the existing seam (`generateTunnel` /
       `extendTunnel` / `initTunnelGen`, plus `step` / `createInitialState`):
-  - [ ] every Obstacle group's Slices share one `edge` and one `depth`
-  - [ ] every group length is in `[obstacleMinSlices, obstacleMaxSlices]`, and
+  - [x] every Obstacle group's Slices share one `edge` and one `depth`
+        ("makes each obstacle a block of slices sharing one edge and one depth")
+  - [x] every group length is in `[obstacleMinSlices, obstacleMaxSlices]`, and
         group lengths vary across a long Tunnel / many Seeds
-  - [ ] `>= 1` clear Slice between consecutive groups
-  - [ ] successive group *starts* are about one `obstacleInterval` apart
-  - [ ] `top` and `bottom` are constant across each group's Slices
-  - [ ] effective opening `>= helicopter.height + clearance` on every Slice
-        (existing test, confirmed with wide spans)
-  - [ ] determinism / stable prefix / incremental == one-shot, with a Seed +
+        ("varies obstacle block width within the configured slice range")
+  - [x] `>= 1` clear Slice between consecutive groups
+        ("places obstacle blocks only past the grace distance, each parted by a
+        clear slice")
+  - [x] successive group *starts* are about one `obstacleInterval` apart
+        ("spaces successive obstacle blocks by about one obstacleInterval")
+  - [x] `top` and `bottom` are constant across each group's Slices
+        ("holds the corridor centre fixed across an obstacle block")
+  - [x] effective opening `>= helicopter.height + clearance` on every Slice
+        ("keeps the effective opening at least a helicopter plus clearance" +
+        "keeps the opening clear through the whole of a mid-ramp obstacle block")
+  - [x] determinism / stable prefix / incremental == one-shot, with a Seed +
         `toIndex` where a group straddles an `extendTunnel` boundary
-  - [ ] worked-number assertions in the edge-step test updated for the new
-        `sliceWidth`
-  - [ ] one end-to-end sim test: a Run that clears a wide top-edge Obstacle's
-        tip but dives into its trailing corner ends `wrecked`
-- [ ] `npm test` (or the project's test command) passes.
-- [ ] ADR-0003 gets a one-line amendment: "Obstacles never occupy consecutive
-      slices" is restated as "distinct Obstacles are separated by at least one
-      clear Slice".
+        ("resumes an obstacle block that straddles an extendTunnel boundary")
+  - [x] edge-step test expressed against the config `sliceWidth` (not a stale
+        worked number): `t = c.tunnel.sliceWidth / speed`.
+  - [x] one end-to-end sim test: a Run that dives into a wide Obstacle's body
+        past its leading slice ends `wrecked` ("crashes into the body of a wide
+        obstacle block, not only its leading slice").
+- [x] `npm test` (or the project's test command) passes. (36 tests.)
+- [x] ADR-0003 amended: an obstacle "block spanning one or more consecutive
+      slices from a single edge at one depth, and distinct obstacles are always
+      parted by at least one clear slice".
