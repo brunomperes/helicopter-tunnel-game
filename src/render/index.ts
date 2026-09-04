@@ -5,7 +5,7 @@
  * phase overlays. Colours are the placeholder palette; the art pass is deferred.
  */
 
-import { rampSpeed, type SimState, type Slice } from "../sim/index.js";
+import { rampSpeed, type SimState } from "../sim/index.js";
 import { theme } from "../theme.js";
 
 export interface HudModel {
@@ -47,9 +47,15 @@ function drawScrim(ctx: CanvasRenderingContext2D, width: number, height: number)
 
 /**
  * Fills the solid rock above the top edge and below the bottom edge for every
- * slice currently on screen, then stamps each slice's obstacle. Slice `i` covers
- * tunnel distance `[i * sliceWidth, (i + 1) * sliceWidth)`; with the run scrolled
- * `state.distance` px, its left edge sits at screen-x `i * sliceWidth - distance`.
+ * slice currently on screen. An obstacle is the same colour as the wall it roots
+ * into, so its depth is folded into the wall fill rather than stamped as a second
+ * abutting rectangle — a shared boundary at a fractional y would crack into a
+ * hairline seam under the scaled, non-smoothed transform. Only the obstacle's
+ * gap-facing edge stays a rectangle boundary.
+ *
+ * Slice `i` covers tunnel distance `[i * sliceWidth, (i + 1) * sliceWidth)`; with
+ * the run scrolled `state.distance` px, its left edge sits at screen-x
+ * `i * sliceWidth - distance`.
  */
 function drawTunnel(ctx: CanvasRenderingContext2D, state: SimState): void {
 	const { width, height } = state.config.world;
@@ -64,19 +70,11 @@ function drawTunnel(ctx: CanvasRenderingContext2D, state: SimState): void {
 		const x = i * sliceWidth - state.distance;
 		// +1 keeps neighbouring slices seamless under the non-smoothed transform.
 		const w = sliceWidth + 1;
-		ctx.fillRect(x, 0, w, slice.top);
-		ctx.fillRect(x, slice.bottom, w, height - slice.bottom);
-		drawObstacle(ctx, slice, x, w);
-	}
-}
-
-function drawObstacle(ctx: CanvasRenderingContext2D, slice: Slice, x: number, w: number): void {
-	const { obstacle } = slice;
-	if (!obstacle) return;
-	if (obstacle.edge === "top") {
-		ctx.fillRect(x, slice.top, w, obstacle.depth);
-	} else {
-		ctx.fillRect(x, slice.bottom - obstacle.depth, w, obstacle.depth);
+		const { obstacle } = slice;
+		const topDepth = obstacle?.edge === "top" ? obstacle.depth : 0;
+		const bottomDepth = obstacle?.edge === "bottom" ? obstacle.depth : 0;
+		ctx.fillRect(x, 0, w, slice.top + topDepth);
+		ctx.fillRect(x, slice.bottom - bottomDepth, w, height - slice.bottom + bottomDepth);
 	}
 }
 
