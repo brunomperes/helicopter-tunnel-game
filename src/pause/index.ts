@@ -7,6 +7,10 @@
  * "PAUSED"), and `resuming` (frozen, a wall-clock countdown ticking down before
  * the sim goes live again). Thrust on `paused` starts the countdown; the pause
  * key on `resuming` drops back to `paused` and discards the countdown.
+ *
+ * Two things freeze a run: the explicit pause key, and the tab being hidden
+ * mid-flight (auto-pause). Auto-pause is a one-way trip into `paused` — returning
+ * to the tab never auto-resumes; leaving `paused` is always an explicit thrust.
  */
 
 import type { Phase } from "../sim/index.js";
@@ -29,6 +33,8 @@ const resuming = (msLeft: number): PauseState => ({ mode: "resuming", msLeft });
 export type PauseEvent =
 	/** The player pressed the pause key (Esc / P). Carries the current run phase. */
 	| { readonly type: "pauseKey"; readonly phase: Phase }
+	/** The tab became hidden (auto-pause). Carries the current run phase. */
+	| { readonly type: "tabHidden"; readonly phase: Phase }
 	/** The player pressed thrust (Space / ArrowUp). */
 	| { readonly type: "thrust" }
 	/** A frame elapsed: advance the resume countdown by `elapsedMs` wall-clock ms. */
@@ -38,8 +44,13 @@ export type PauseEvent =
 export function reducePause(state: PauseState, event: PauseEvent): PauseState {
 	switch (event.type) {
 		case "pauseKey":
-			// From a live run, pause only mid-flight. From `resuming`, drop back to
-			// `paused` and discard the countdown so the next thrust starts fresh.
+		case "tabHidden":
+			// The pause key and the tab going hidden both mean "freeze now". From a
+			// live run, freeze only mid-flight (a no-op in attract / wrecked). From
+			// `resuming`, drop back to `paused` and discard the countdown so the next
+			// thrust starts fresh. Nothing here moves `paused` -> `running`: leaving
+			// the pause screen is always an explicit thrust, so a hidden tab that
+			// becomes visible again just stays paused.
 			if (state.mode === "running") {
 				return event.phase === "flying" ? PAUSED : state;
 			}

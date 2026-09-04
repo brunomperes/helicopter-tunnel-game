@@ -27,6 +27,35 @@ describe("reducePause: pause / resume transitions", () => {
 		}
 	});
 
+	it("auto-pauses when the tab is hidden during a flying run", () => {
+		expect(reducePause(RUNNING, { type: "tabHidden", phase: "flying" })).toEqual(PAUSED);
+	});
+
+	it("is a no-op on tab-hidden outside a flying run", () => {
+		for (const phase of ["attract", "wrecked"] as const) {
+			expect(reducePause(RUNNING, { type: "tabHidden", phase })).toEqual(RUNNING);
+		}
+	});
+
+	it("stays paused when the tab is hidden while already paused", () => {
+		for (const phase of phases) {
+			expect(reducePause(PAUSED, { type: "tabHidden", phase })).toEqual(PAUSED);
+		}
+	});
+
+	it("returns to PAUSED when the tab is hidden mid-countdown", () => {
+		const mid = tick(reducePause(PAUSED, { type: "thrust" }), 1000);
+		expect(mid).toEqual({ mode: "resuming", msLeft: 500 });
+		expect(reducePause(mid, { type: "tabHidden", phase: "flying" })).toEqual(PAUSED);
+	});
+
+	it("does not auto-resume: returning to the tab emits no event, so PAUSED holds", () => {
+		// Auto-pause is a one-way trip. Nothing in the reducer moves paused ->
+		// running on its own; only a thrust does.
+		const paused = reducePause(RUNNING, { type: "tabHidden", phase: "flying" });
+		expect(tick(paused, 10_000)).toEqual(PAUSED);
+	});
+
 	it("ignores the pause key while already paused", () => {
 		for (const phase of phases) {
 			expect(reducePause(PAUSED, { type: "pauseKey", phase })).toEqual(PAUSED);
