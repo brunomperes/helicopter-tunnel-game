@@ -14,4 +14,5 @@ export const theme = {
 	overlayScrim: "rgba(0, 0, 0, 0.55)",
 	hudFont: "16px monospace",
 	titleFont: "32px monospace",
+	countdownFont: "72px monospace",
 } as const;

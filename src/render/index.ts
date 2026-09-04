@@ -12,8 +12,14 @@ export interface HudModel {
 	readonly best: number;
 	/** When true, draw the dev/playtest readout (speed + distance). */
 	readonly dev: boolean;
-	/** When true, the shell has paused the run (ADR-0004): draw the PAUSED overlay. */
+	/** When true, the run is statically paused (ADR-0004): draw the scrim + PAUSED title. */
 	readonly paused: boolean;
+	/**
+	 * Resume countdown digit (`3` / `2` / `1`) to draw over the frozen field, or
+	 * `null` when no countdown is running. The scrim is absent during the
+	 * countdown so the player can re-orient before the sim goes live.
+	 */
+	readonly resumeDigit: number | null;
 }
 
 export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
@@ -30,6 +36,7 @@ export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudM
 	if (state.phase === "attract") drawAttract(ctx, state, hud);
 	if (state.phase === "wrecked") drawWrecked(ctx, state, hud);
 	if (hud.paused) drawPaused(ctx, state);
+	if (hud.resumeDigit !== null) drawResumeCountdown(ctx, state, hud.resumeDigit);
 }
 
 /** Full-screen PAUSED overlay: scrim + centred title, mirroring `drawWrecked`. */
@@ -37,6 +44,15 @@ function drawPaused(ctx: CanvasRenderingContext2D, state: SimState): void {
 	const { width, height } = state.config.world;
 	drawScrim(ctx, width, height);
 	centeredText(ctx, "PAUSED", width / 2, height / 2, theme.titleFont);
+}
+
+/**
+ * Resume countdown: just the large centred digit over the frozen field — no
+ * scrim, so the player can read the tunnel before re-entering motion.
+ */
+function drawResumeCountdown(ctx: CanvasRenderingContext2D, state: SimState, digit: number): void {
+	const { width, height } = state.config.world;
+	centeredText(ctx, String(digit), width / 2, height / 2, theme.countdownFont);
 }
 
 /** Dim the whole world so an overlay title reads on top of it. */
