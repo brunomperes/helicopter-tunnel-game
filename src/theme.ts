@@ -10,7 +10,7 @@ export const theme = {
 	helicopterAccent: "#2b6fd8",
 	hudText: "#ffffff",
 	devText: "#ffe14d",
-	overlayText: "#3ad12e",
+	overlayText: "#ffffff",
 	overlayScrim: "rgba(0, 0, 0, 0.55)",
 	/** Resume countdown digit: white core + dark outline so it reads over the
 	 * black gap and the green tunnel fill alike (there is no scrim behind it). */

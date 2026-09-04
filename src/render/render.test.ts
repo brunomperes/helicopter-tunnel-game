@@ -1,36 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { createInitialState, defaultConfig, type SimState, step } from "../sim/index.js";
 import { generateTunnel } from "../sim/tunnel.js";
+import { theme } from "../theme.js";
 import { type HudModel, render } from "./index.js";
 
-type Rect = [x: number, y: number, w: number, h: number];
-
-/** Context stand-in that records every `fillRect` call. */
-function rectRecordingCtx() {
-	const rects: Rect[] = [];
-	const ctx = {
-		fillStyle: "",
-		font: "",
-		textBaseline: "",
-		textAlign: "",
-		fillRect(x: number, y: number, w: number, h: number) {
-			rects.push([x, y, w, h]);
-		},
-		fillText() {},
-	};
-	return { ctx: ctx as unknown as CanvasRenderingContext2D, rects };
+interface Rect {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	/** The `fillStyle` in effect when the rectangle was filled. */
+	fillStyle: string;
 }
-
-const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
-const hasRect = (rects: Rect[], [x, y, w, h]: Rect) =>
-	rects.some((r) => near(r[0], x) && near(r[1], y) && near(r[2], w) && near(r[3], h));
 
 /**
  * Minimal 2D-context stand-in that records the text strings passed to
- * `fillText`. Only the members `render` actually touches are implemented.
+ * `fillText` / `strokeText` and the rectangles (with their fill colour) passed
+ * to `fillRect`. Only the members `render` actually touches are implemented.
  */
 function recordingCtx() {
 	const texts: string[] = [];
+	const rects: Rect[] = [];
 	const ctx = {
 		fillStyle: "",
 		font: "",
@@ -39,7 +29,9 @@ function recordingCtx() {
 		lineJoin: "",
 		lineWidth: 0,
 		strokeStyle: "",
-		fillRect() {},
+		fillRect(x: number, y: number, w: number, h: number) {
+			rects.push({ x, y, w, h, fillStyle: ctx.fillStyle });
+		},
 		fillText(text: string) {
 			texts.push(text);
 		},
@@ -47,8 +39,12 @@ function recordingCtx() {
 			texts.push(text);
 		},
 	};
-	return { ctx: ctx as unknown as CanvasRenderingContext2D, texts };
+	return { ctx: ctx as unknown as CanvasRenderingContext2D, texts, rects };
 }
+
+const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+const hasRect = (rects: Rect[], x: number, y: number, w: number, h: number) =>
+	rects.some((r) => near(r.x, x) && near(r.y, y) && near(r.w, w) && near(r.h, h));
 
 const hud: HudModel = { best: 42, dev: false, paused: false, resumeDigit: null };
 
@@ -132,13 +128,13 @@ describe("render tunnel obstacles", () => {
 		const depth = slice.obstacle?.depth ?? 0;
 		const { state, x, w } = stateWithTunnel(slices, index);
 
-		const { ctx, rects } = rectRecordingCtx();
+		const { ctx, rects } = recordingCtx();
 		render(ctx, state, hud);
 
 		// Wall + obstacle fused into a single fill from the canvas top.
-		expect(hasRect(rects, [x, 0, w, slice.top + depth])).toBe(true);
+		expect(hasRect(rects, x, 0, w, slice.top + depth)).toBe(true);
 		// No separate obstacle rectangle butting against the wall edge.
-		expect(hasRect(rects, [x, slice.top, w, depth])).toBe(false);
+		expect(hasRect(rects, x, slice.top, w, depth)).toBe(false);
 	});
 
 	it("paints a bottom obstacle and its wall as one rectangle (no abutting seam)", () => {
@@ -146,33 +142,61 @@ describe("render tunnel obstacles", () => {
 		const depth = slice.obstacle?.depth ?? 0;
 		const { state, x, w } = stateWithTunnel(slices, index);
 
-		const { ctx, rects } = rectRecordingCtx();
+		const { ctx, rects } = recordingCtx();
 		render(ctx, state, hud);
 
-		const bottomFill: Rect = [x, slice.bottom - depth, w, height - slice.bottom + depth];
-		expect(hasRect(rects, bottomFill)).toBe(true);
-		expect(hasRect(rects, [x, slice.bottom - depth, w, depth])).toBe(false);
+		expect(hasRect(rects, x, slice.bottom - depth, w, height - slice.bottom + depth)).toBe(true);
+		expect(hasRect(rects, x, slice.bottom - depth, w, depth)).toBe(false);
 	});
 
 	it("leaves obstacle-free slices as plain top/bottom wall fills", () => {
 		const { slice, index } = pick((s) => !s.obstacle);
 		const { state, x, w } = stateWithTunnel(slices, index);
 
-		const { ctx, rects } = rectRecordingCtx();
+		const { ctx, rects } = recordingCtx();
 		render(ctx, state, hud);
 
-		expect(hasRect(rects, [x, 0, w, slice.top])).toBe(true);
-		expect(hasRect(rects, [x, slice.bottom, w, height - slice.bottom])).toBe(true);
+		expect(hasRect(rects, x, 0, w, slice.top)).toBe(true);
+		expect(hasRect(rects, x, slice.bottom, w, height - slice.bottom)).toBe(true);
 	});
 
 	it("keeps the +1px horizontal overlap between neighbouring slices", () => {
 		const { index } = pick((s) => !s.obstacle);
 		const { state } = stateWithTunnel(slices, index);
-		const { ctx, rects } = rectRecordingCtx();
+		const { ctx, rects } = recordingCtx();
 		render(ctx, state, hud);
 
 		const overlap = defaultConfig.tunnel.sliceWidth + 1;
-		expect(rects.filter((r) => r[2] === overlap).length).toBeGreaterThan(0);
+		expect(rects.filter((r) => r.w === overlap).length).toBeGreaterThan(0);
+	});
+});
+
+describe("render attract overlay", () => {
+	it("fills a full-canvas scrim behind the attract text", () => {
+		const state = attractState();
+		const { width, height } = state.config.world;
+
+		const { ctx, rects } = recordingCtx();
+		render(ctx, state, hud);
+
+		const scrim = rects.some(
+			(r) =>
+				r.fillStyle === theme.overlayScrim &&
+				r.x === 0 &&
+				r.y === 0 &&
+				r.w === width &&
+				r.h === height,
+		);
+		expect(scrim).toBe(true);
+	});
+
+	it("does not fill the scrim while flying", () => {
+		const state = flyingState();
+
+		const { ctx, rects } = recordingCtx();
+		render(ctx, state, hud);
+
+		expect(rects.some((r) => r.fillStyle === theme.overlayScrim)).toBe(false);
 	});
 });
 
