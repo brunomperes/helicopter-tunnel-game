@@ -4,7 +4,7 @@
  */
 
 import { createInputSource, THRUST_KEYS } from "./input/index.js";
-import { type PauseMode, reducePause } from "./pause/index.js";
+import { type PauseEvent, type PauseMode, reducePause } from "./pause/index.js";
 import { render } from "./render/index.js";
 import { createInitialState, defaultConfig, step } from "./sim/index.js";
 import { loadBest, saveBest } from "./storage/index.js";
@@ -25,7 +25,7 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	let accumulator = 0;
 	let last = performance.now();
 	let running = true;
-	let pause: PauseMode = "running";
+	let pauseMode: PauseMode = "running";
 
 	const fitCanvas = () => resizeCanvas(canvas, ctx, config.world.width, config.world.height);
 	fitCanvas();
@@ -38,10 +38,10 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 
 	// Pause is a shell concern only — see ADR-0004. It never reaches the sim:
 	// a paused tick is simply one where `step` is not called.
-	const advancePause = (event: Parameters<typeof reducePause>[1]) => {
-		const next = reducePause(pause, event);
-		if (next === pause) return;
-		pause = next;
+	const advancePause = (event: PauseEvent) => {
+		const next = reducePause(pauseMode, event);
+		if (next === pauseMode) return;
+		pauseMode = next;
 		// Hold the accumulator and reset the frame clock so a long pause does
 		// not fast-forward the sim on resume, mirroring the tab-hidden path.
 		last = performance.now();
@@ -65,7 +65,7 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 		const delta = Math.min(now - last, MAX_FRAME_MS);
 		last = now;
 
-		if (pause === "running") {
+		if (pauseMode === "running") {
 			accumulator += delta;
 			const thrust = document.hidden ? false : input.thrustHeld;
 			while (accumulator >= stepMs) {
@@ -76,7 +76,7 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 			}
 		}
 
-		render(ctx, state, { best, dev: import.meta.env.DEV, paused: pause === "paused" });
+		render(ctx, state, { best, dev: import.meta.env.DEV, paused: pauseMode === "paused" });
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);
