@@ -3,7 +3,7 @@
  * `thrustHeld` boolean. The only browser-bound part of the input path.
  */
 
-const THRUST_KEYS = new Set(["Space", "ArrowUp"]);
+export const THRUST_KEYS = new Set(["Space", "ArrowUp"]);
 
 export interface InputSource {
 	/** True while any thrust input is currently held. */

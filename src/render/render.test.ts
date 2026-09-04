@@ -21,7 +21,7 @@ function recordingCtx() {
 	return { ctx: ctx as unknown as CanvasRenderingContext2D, texts };
 }
 
-const hud: HudModel = { best: 42, dev: false };
+const hud: HudModel = { best: 42, dev: false, paused: false };
 
 /** Step an attract-phase state forward a few idle ticks (demo scroll). */
 function attractState(): SimState {
@@ -61,5 +61,19 @@ describe("render HUD gating", () => {
 
 		expect(texts.some((t) => t.startsWith("DISTANCE:"))).toBe(true);
 		expect(texts.some((t) => t.startsWith("BEST:"))).toBe(true);
+	});
+});
+
+describe("render pause overlay", () => {
+	it("draws the PAUSED overlay only when the hud flag is set", () => {
+		const state = flyingState();
+
+		const off = recordingCtx();
+		render(off.ctx, state, hud);
+		expect(off.texts).not.toContain("PAUSED");
+
+		const on = recordingCtx();
+		render(on.ctx, state, { ...hud, paused: true });
+		expect(on.texts).toContain("PAUSED");
 	});
 });

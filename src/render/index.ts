@@ -12,6 +12,8 @@ export interface HudModel {
 	readonly best: number;
 	/** When true, draw the dev/playtest readout (speed + distance). */
 	readonly dev: boolean;
+	/** When true, the shell has paused the run (ADR-0004): draw the PAUSED overlay. */
+	readonly paused: boolean;
 }
 
 export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
@@ -27,6 +29,20 @@ export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudM
 
 	if (state.phase === "attract") drawAttract(ctx, state, hud);
 	if (state.phase === "wrecked") drawWrecked(ctx, state, hud);
+	if (hud.paused) drawPaused(ctx, state);
+}
+
+/** Full-screen PAUSED overlay: scrim + centred title, mirroring `drawWrecked`. */
+function drawPaused(ctx: CanvasRenderingContext2D, state: SimState): void {
+	const { width, height } = state.config.world;
+	drawScrim(ctx, width, height);
+	centeredText(ctx, "PAUSED", width / 2, height / 2, theme.titleFont);
+}
+
+/** Dim the whole world so an overlay title reads on top of it. */
+function drawScrim(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+	ctx.fillStyle = theme.overlayScrim;
+	ctx.fillRect(0, 0, width, height);
 }
 
 /**
@@ -121,8 +137,7 @@ function drawAttract(ctx: CanvasRenderingContext2D, state: SimState, hud: HudMod
 
 function drawWrecked(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
 	const { width, height } = state.config.world;
-	ctx.fillStyle = theme.overlayScrim;
-	ctx.fillRect(0, 0, width, height);
+	drawScrim(ctx, width, height);
 	const distance = Math.floor(state.distance);
 	const isBest = distance >= hud.best && distance > 0;
 	centeredText(ctx, isBest ? "NEW BEST" : "WRECKED", width / 2, height / 2 - 24, theme.titleFont);
