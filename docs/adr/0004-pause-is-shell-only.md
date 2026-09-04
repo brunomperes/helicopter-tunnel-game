@@ -1,13 +1,29 @@
 # Pause is a shell concern, not a sim Phase
 
 Pausing a run lives entirely in the shell (`src/app.ts` + a small pure helper in
-`src/pause/`). It is **not** a sim `Phase` and the sim never learns about it.
-"Paused" is defined as "`step` was not called this tick": the fixed-timestep loop
-holds its accumulator and resets the frame clock (the same trick the tab-hidden
-path already uses) so a long pause does not fast-forward the sim on resume. A
-tiny reducer models the two shell modes — `running` and `paused` — and the events
-that move between them (`pauseKey`, `thrust`), with its own unit tests. Render
-learns it is paused through a `HudModel` flag and draws the overlay.
+`src/pause/`). It is **not** a sim `Phase` and the sim never learns about it. A
+"frozen" tick is defined as "`step` was not called this tick": the fixed-timestep
+loop holds its accumulator and resets the frame clock (the same trick the
+tab-hidden path already uses) so time spent frozen does not fast-forward the sim
+when it goes live again.
+
+A tiny reducer models three shell modes and the events that move between them:
+
+- `running` — the loop steps the sim.
+- `paused` — frozen; render draws a scrim + "PAUSED". Entered by the pause key
+  (`Esc` / `P`) during a `flying` run; a no-op in attract / wrecked.
+- `resuming` — frozen; a 1500 ms wall-clock countdown (`3 → 2 → 1`, one digit per
+  500 ms via `ceil(msLeft / 500)`), advanced by a `tick` event carrying the
+  frame's elapsed ms. Render draws only the digit over the frozen field — no
+  scrim — so the player can re-orient before re-entering motion. Entered by
+  thrust from `paused`; at zero the mode flips to `running` and the sim goes live
+  with whatever thrust is then held (the resuming press is not consumed or
+  replayed). The pause key during the countdown returns to `paused` and discards
+  it, so the next thrust starts a fresh `3 → 2 → 1`.
+
+The helper has its own unit tests (transitions, countdown progression,
+reset-on-re-pause). Render learns the mode through `HudModel` fields (`paused`,
+`resumeDigit`) and draws the matching overlay.
 
 Why not add a `paused` value to the sim `Phase`: ADR-0002 makes a run a pure
 function of `(seed, thrust sequence)`. Threading pause through the sim would put

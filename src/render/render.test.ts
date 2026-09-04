@@ -13,15 +13,21 @@ function recordingCtx() {
 		font: "",
 		textBaseline: "",
 		textAlign: "",
+		lineJoin: "",
+		lineWidth: 0,
+		strokeStyle: "",
 		fillRect() {},
 		fillText(text: string) {
+			texts.push(text);
+		},
+		strokeText(text: string) {
 			texts.push(text);
 		},
 	};
 	return { ctx: ctx as unknown as CanvasRenderingContext2D, texts };
 }
 
-const hud: HudModel = { best: 42, dev: false, paused: false };
+const hud: HudModel = { best: 42, dev: false, paused: false, resumeDigit: null };
 
 /** Step an attract-phase state forward a few idle ticks (demo scroll). */
 function attractState(): SimState {
@@ -75,5 +81,26 @@ describe("render pause overlay", () => {
 		const on = recordingCtx();
 		render(on.ctx, state, { ...hud, paused: true });
 		expect(on.texts).toContain("PAUSED");
+	});
+
+	it("draws the resume countdown digit — and not PAUSED — during a countdown", () => {
+		const state = flyingState();
+
+		const { ctx, texts } = recordingCtx();
+		render(ctx, state, { ...hud, paused: false, resumeDigit: 2 });
+
+		expect(texts).toContain("2");
+		expect(texts).not.toContain("PAUSED");
+	});
+
+	it("draws no countdown digit when resumeDigit is null", () => {
+		const state = flyingState();
+
+		const { ctx, texts } = recordingCtx();
+		render(ctx, state, hud);
+
+		expect(texts).not.toContain("1");
+		expect(texts).not.toContain("2");
+		expect(texts).not.toContain("3");
 	});
 });

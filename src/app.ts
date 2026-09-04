@@ -4,7 +4,7 @@
  */
 
 import { createInputSource, THRUST_KEYS } from "./input/index.js";
-import { type PauseEvent, type PauseMode, reducePause } from "./pause/index.js";
+import { countdownDigit, type PauseEvent, type PauseState, reducePause } from "./pause/index.js";
 import { render } from "./render/index.js";
 import { createInitialState, defaultConfig, step } from "./sim/index.js";
 import { loadBest, saveBest } from "./storage/index.js";
@@ -25,7 +25,7 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	let accumulator = 0;
 	let last = performance.now();
 	let running = true;
-	let pauseMode: PauseMode = "running";
+	let pause: PauseState = { mode: "running" };
 
 	const fitCanvas = () => resizeCanvas(canvas, ctx, config.world.width, config.world.height);
 	fitCanvas();
@@ -37,14 +37,19 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	document.addEventListener("visibilitychange", onVisibility);
 
 	// Pause is a shell concern only — see ADR-0004. It never reaches the sim:
-	// a paused tick is simply one where `step` is not called.
+	// a frozen tick is simply one where `step` is not called. `pause` moves
+	// through running -> paused -> resuming (a 1500 ms countdown) -> running.
 	const advancePause = (event: PauseEvent) => {
-		const next = reducePause(pauseMode, event);
-		if (next === pauseMode) return;
-		pauseMode = next;
-		// Hold the accumulator and reset the frame clock so a long pause does
-		// not fast-forward the sim on resume, mirroring the tab-hidden path.
-		last = performance.now();
+		const next = reducePause(pause, event);
+		if (next === pause) return;
+		const modeChanged = next.mode !== pause.mode;
+		pause = next;
+		// On any change of mode (freeze, re-pause, or go-live), hold the
+		// accumulator and reset the frame clock so time spent frozen does not
+		// fast-forward the sim, mirroring the tab-hidden path. A countdown
+		// `tick` that only lowers `msLeft` keeps the same mode, so the clock is
+		// left running and the countdown keeps measuring real wall-clock time.
+		if (modeChanged) last = performance.now();
 	};
 
 	const onPauseKey = (e: KeyboardEvent) => {
@@ -65,7 +70,13 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 		const delta = Math.min(now - last, MAX_FRAME_MS);
 		last = now;
 
-		if (pauseMode === "running") {
+		if (pause.mode === "resuming") {
+			// Sim stays frozen for the whole countdown; advance it by real
+			// elapsed ms. When this ends the countdown `advancePause` resets the
+			// frame clock, so the sim goes live next frame without a burst of
+			// catch-up ticks — and never within this same frame.
+			advancePause({ type: "tick", elapsedMs: delta });
+		} else if (pause.mode === "running") {
 			accumulator += delta;
 			const thrust = document.hidden ? false : input.thrustHeld;
 			while (accumulator >= stepMs) {
@@ -76,7 +87,12 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 			}
 		}
 
-		render(ctx, state, { best, dev: import.meta.env.DEV, paused: pauseMode === "paused" });
+		render(ctx, state, {
+			best,
+			dev: import.meta.env.DEV,
+			paused: pause.mode === "paused",
+			resumeDigit: pause.mode === "resuming" ? countdownDigit(pause.msLeft) : null,
+		});
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);
