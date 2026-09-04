@@ -83,7 +83,10 @@ _Avoid_: Game over, dead, results
 Pause is orthogonal to Attract / Flying / Wrecked — it is not a Run state. It is a
 shell concern: while frozen, the shell simply stops calling the sim's `step`, so
 the run and its determinism are untouched (ADR-0004). Pause exists only during a
-run in progress; the pause key (`Esc` / `P`) is a no-op in Attract and Wrecked.
+run in progress; both entry points — the pause key (`Esc` / `P`) and the tab
+becoming hidden mid-run (auto-pause) — are a no-op in Attract and Wrecked.
+Auto-pause is one-way: returning to the tab leaves the game on "PAUSED", and
+resuming always takes an explicit thrust press.
 
 The shell holds one of three pause modes: `running` (the loop steps the sim),
 `paused` (frozen, scrim + "PAUSED"), and `resuming` (frozen, a 1500 ms wall-clock

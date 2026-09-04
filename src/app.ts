@@ -31,10 +31,12 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	fitCanvas();
 	window.addEventListener("resize", fitCanvas);
 
-	const onVisibility = () => {
-		if (document.hidden) last = performance.now();
+	// Pretend no wall-clock time passed since the last frame, so a stretch spent
+	// frozen or with the tab hidden doesn't become a burst of catch-up sim ticks
+	// when the loop goes live again (ADR-0004).
+	const holdFrameClock = () => {
+		last = performance.now();
 	};
-	document.addEventListener("visibilitychange", onVisibility);
 
 	// Pause is a shell concern only — see ADR-0004. It never reaches the sim:
 	// a frozen tick is simply one where `step` is not called. `pause` moves
@@ -44,12 +46,10 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 		if (next === pause) return;
 		const modeChanged = next.mode !== pause.mode;
 		pause = next;
-		// On any change of mode (freeze, re-pause, or go-live), hold the
-		// accumulator and reset the frame clock so time spent frozen does not
-		// fast-forward the sim, mirroring the tab-hidden path. A countdown
-		// `tick` that only lowers `msLeft` keeps the same mode, so the clock is
-		// left running and the countdown keeps measuring real wall-clock time.
-		if (modeChanged) last = performance.now();
+		// Freeze, re-pause and go-live all reset the frame's timing baseline. A
+		// countdown `tick` that only lowers `msLeft` keeps the same mode, so the
+		// clock keeps running and the countdown measures real wall-clock time.
+		if (modeChanged) holdFrameClock();
 	};
 
 	const onPauseKey = (e: KeyboardEvent) => {
@@ -64,6 +64,17 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 		}
 	};
 	window.addEventListener("keydown", onPauseKey);
+
+	const onVisibility = () => {
+		if (!document.hidden) return;
+		// Auto-pause a flying run when the tab is hidden — a one-way trip: coming
+		// back lands on "PAUSED" and resumes only on thrust, never automatically.
+		// Hold the clock unconditionally; in attract / wrecked nothing pauses but
+		// the sim still runs and must not fast-forward on return.
+		holdFrameClock();
+		advancePause({ type: "tabHidden", phase: state.phase });
+	};
+	document.addEventListener("visibilitychange", onVisibility);
 
 	const frame = (now: number) => {
 		if (!running) return;
