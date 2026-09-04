@@ -13,8 +13,14 @@ function recordingCtx() {
 		font: "",
 		textBaseline: "",
 		textAlign: "",
+		lineJoin: "",
+		lineWidth: 0,
+		strokeStyle: "",
 		fillRect() {},
 		fillText(text: string) {
+			texts.push(text);
+		},
+		strokeText(text: string) {
 			texts.push(text);
 		},
 	};

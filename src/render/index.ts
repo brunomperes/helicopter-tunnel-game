@@ -48,11 +48,22 @@ function drawPaused(ctx: CanvasRenderingContext2D, state: SimState): void {
 
 /**
  * Resume countdown: just the large centred digit over the frozen field — no
- * scrim, so the player can read the tunnel before re-entering motion.
+ * scrim, so the player can read the tunnel before re-entering motion. Drawn as
+ * a white glyph with a thick dark outline so it stays legible where it overlaps
+ * the green tunnel fill.
  */
 function drawResumeCountdown(ctx: CanvasRenderingContext2D, state: SimState, digit: number): void {
 	const { width, height } = state.config.world;
-	centeredText(ctx, String(digit), width / 2, height / 2, theme.countdownFont);
+	const text = String(digit);
+	ctx.font = theme.countdownFont;
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	ctx.lineJoin = "round";
+	ctx.lineWidth = 8;
+	ctx.strokeStyle = theme.countdownOutline;
+	ctx.strokeText(text, width / 2, height / 2);
+	ctx.fillStyle = theme.countdownText;
+	ctx.fillText(text, width / 2, height / 2);
 }
 
 /** Dim the whole world so an overlay title reads on top of it. */

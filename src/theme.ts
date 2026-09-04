@@ -12,7 +12,11 @@ export const theme = {
 	devText: "#ffe14d",
 	overlayText: "#3ad12e",
 	overlayScrim: "rgba(0, 0, 0, 0.55)",
+	/** Resume countdown digit: white core + dark outline so it reads over the
+	 * black gap and the green tunnel fill alike (there is no scrim behind it). */
+	countdownText: "#ffffff",
+	countdownOutline: "#000000",
 	hudFont: "16px monospace",
 	titleFont: "32px monospace",
-	countdownFont: "72px monospace",
+	countdownFont: "bold 72px monospace",
 } as const;
