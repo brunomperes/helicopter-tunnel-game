@@ -549,3 +549,48 @@ describe("sim lifecycle", () => {
 		expect(cleared(state.distance)).toBe(true);
 	});
 });
+
+describe("seed per run", () => {
+	const c = defaultConfig;
+
+	/** Step from `wrecked` past the restart lock, then tap to retry with `nextSeed`. */
+	function retry(state: SimState, nextSeed: string): SimState {
+		let s = state;
+		for (let i = 0; i < c.restartLockTicks; i++) s = step(s, false, nextSeed);
+		return step(s, true, nextSeed);
+	}
+
+	/** Fly the current run to its crash, feeding `nextSeed` on every tick. */
+	function crash(state: SimState, nextSeed: string): SimState {
+		let s = state;
+		for (let g = 0; s.phase === "flying" && g < 100_000; g++) s = step(s, false, nextSeed);
+		return s;
+	}
+
+	it("swaps in the app's fresh seed at each unpinned run start", () => {
+		let state = step(createInitialState("boot", c, false), true, "run-1");
+		expect(state.seed).toBe("run-1");
+		const firstTunnel = state.tunnel;
+
+		state = retry(crash(state, "run-1"), "run-2");
+		expect(state.phase).toBe("flying");
+		expect(state.seed).toBe("run-2");
+		expect(state.tunnel).not.toEqual(firstTunnel);
+	});
+
+	it("ignores the app's seed and replays the same tunnel when pinned", () => {
+		let state = step(createInitialState("pinned", c, true), true, "ignored-1");
+		expect(state.seed).toBe("pinned");
+		const firstTunnel = state.tunnel;
+
+		state = retry(crash(state, "ignored-2"), "ignored-3");
+		expect(state.phase).toBe("flying");
+		expect(state.seed).toBe("pinned");
+		expect(state.tunnel).toEqual(firstTunnel);
+	});
+
+	it("keeps step a pure function of its arguments", () => {
+		const parked = step(createInitialState("x", c, false), true, "cand");
+		expect(step(parked, false, "cand")).toEqual(step(parked, false, "cand"));
+	});
+});
