@@ -147,6 +147,7 @@ function drawDevReadout(ctx: CanvasRenderingContext2D, state: SimState): void {
 
 function drawAttract(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
 	const { width, height } = state.config.world;
+	drawScrim(ctx, width, height);
 	centeredText(ctx, "TAP TO START", width / 2, height / 2 - 8, theme.titleFont);
 	centeredText(
 		ctx,
