@@ -52,7 +52,8 @@ _Avoid_: Block, wall, pillar, hazard
 
 **Seed**:
 The value that fully determines a run's tunnel. Random per run unless pinned via a
-`?seed=` URL parameter.
+`?seed=` URL parameter. A pinned `?seed=` replays the same tunnel on every retry in
+the session, not just the first run.
 _Avoid_: Key
 
 **Ramp**:
