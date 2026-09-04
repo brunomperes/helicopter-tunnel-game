@@ -35,9 +35,8 @@ export const ORIGIN = { x: 16, y: 16 } as const;
 
 export const PALETTE = {
 	// Living helicopter
-	D: "#1a3f7a", // hullDark   - shadow side, panel lines, hull outline
+	D: "#1a3f7a", // hullDark   - roof, shadow side, panel lines, hull outline
 	M: "#2b6fd8", // hullMid    - main hull (matches theme.helicopterAccent)
-	L: "#bcd8ff", // hullLight  - roof highlight (matches theme.helicopter)
 	G: "#12294a", // glass      - cockpit canopy
 	g: "#7fd8ff", // glassGlare - canopy glare
 	K: "#0d1420", // rotorBlack - mast, tail rotor, skids
@@ -65,7 +64,7 @@ const HELICOPTER: string[] = [
 	"...RRRRRRRRRRRRRRRRRRRRRRRRR....",
 	"..KK...........KK...............",
 	"RRKK...........KK...............",
-	"..KKDDDDDDLLLLLLLLLLLLLLMD......",
+	"..KKDDDDDDDDDDDDDDDDDDDDMD......",
 	"...KDDDDDMMMMMMMMMMMGGGGGDD.....",
 	".......DMMMMMMMMMMMMGGGGGGgD....",
 	".......DMMMMMMMMMMMMGGGGGggD....",
