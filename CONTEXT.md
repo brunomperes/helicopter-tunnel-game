@@ -82,6 +82,15 @@ _Avoid_: Game over, dead, results
 ### Pause
 
 Pause is orthogonal to Attract / Flying / Wrecked — it is not a Run state. It is a
-shell concern: while paused, the shell simply stops calling the sim's `step`, so
+shell concern: while frozen, the shell simply stops calling the sim's `step`, so
 the run and its determinism are untouched (ADR-0004). Pause exists only during a
-run in progress; the pause key is a no-op in Attract and Wrecked.
+run in progress; the pause key (`Esc` / `P`) is a no-op in Attract and Wrecked.
+
+The shell holds one of three pause modes: `running` (the loop steps the sim),
+`paused` (frozen, scrim + "PAUSED"), and `resuming` (frozen, a 1500 ms wall-clock
+countdown — `3 → 2 → 1`, one digit per 500 ms — with only the digit drawn over
+the frozen field, no scrim). Thrust on `paused` starts the countdown; at its end
+the sim goes live with whatever thrust the player is then holding (the resuming
+press is not specially consumed). `Esc` / `P` during the countdown returns to
+`paused` and discards it, so the next thrust starts a fresh `3 → 2 → 1`. The
+countdown is measured in real elapsed time, not sim ticks.

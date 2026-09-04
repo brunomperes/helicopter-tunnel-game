@@ -5,15 +5,21 @@
  * phase overlays. Colours are the placeholder palette; the art pass is deferred.
  */
 
-import { rampSpeed, type SimState, type Slice } from "../sim/index.js";
+import { rampSpeed, type SimState } from "../sim/index.js";
 import { theme } from "../theme.js";
 
 export interface HudModel {
 	readonly best: number;
 	/** When true, draw the dev/playtest readout (speed + distance). */
 	readonly dev: boolean;
-	/** When true, the shell has paused the run (ADR-0004): draw the PAUSED overlay. */
+	/** When true, the run is statically paused (ADR-0004): draw the scrim + PAUSED title. */
 	readonly paused: boolean;
+	/**
+	 * Resume countdown digit (`3` / `2` / `1`) to draw over the frozen field, or
+	 * `null` when no countdown is running. The scrim is absent during the
+	 * countdown so the player can re-orient before the sim goes live.
+	 */
+	readonly resumeDigit: number | null;
 }
 
 export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
@@ -30,6 +36,7 @@ export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudM
 	if (state.phase === "attract") drawAttract(ctx, state, hud);
 	if (state.phase === "wrecked") drawWrecked(ctx, state, hud);
 	if (hud.paused) drawPaused(ctx, state);
+	if (hud.resumeDigit !== null) drawResumeCountdown(ctx, state, hud.resumeDigit);
 }
 
 /** Full-screen PAUSED overlay: scrim + centred title, mirroring `drawWrecked`. */
@@ -37,6 +44,26 @@ function drawPaused(ctx: CanvasRenderingContext2D, state: SimState): void {
 	const { width, height } = state.config.world;
 	drawScrim(ctx, width, height);
 	centeredText(ctx, "PAUSED", width / 2, height / 2, theme.titleFont);
+}
+
+/**
+ * Resume countdown: just the large centred digit over the frozen field — no
+ * scrim, so the player can read the tunnel before re-entering motion. Drawn as
+ * a white glyph with a thick dark outline so it stays legible where it overlaps
+ * the green tunnel fill.
+ */
+function drawResumeCountdown(ctx: CanvasRenderingContext2D, state: SimState, digit: number): void {
+	const { width, height } = state.config.world;
+	const text = String(digit);
+	ctx.font = theme.countdownFont;
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	ctx.lineJoin = "round";
+	ctx.lineWidth = 8;
+	ctx.strokeStyle = theme.countdownOutline;
+	ctx.strokeText(text, width / 2, height / 2);
+	ctx.fillStyle = theme.countdownText;
+	ctx.fillText(text, width / 2, height / 2);
 }
 
 /** Dim the whole world so an overlay title reads on top of it. */
@@ -47,9 +74,15 @@ function drawScrim(ctx: CanvasRenderingContext2D, width: number, height: number)
 
 /**
  * Fills the solid rock above the top edge and below the bottom edge for every
- * slice currently on screen, then stamps each slice's obstacle. Slice `i` covers
- * tunnel distance `[i * sliceWidth, (i + 1) * sliceWidth)`; with the run scrolled
- * `state.distance` px, its left edge sits at screen-x `i * sliceWidth - distance`.
+ * slice currently on screen. An obstacle is the same colour as the wall it roots
+ * into, so its depth is folded into the wall fill rather than stamped as a second
+ * abutting rectangle — a shared boundary at a fractional y would crack into a
+ * hairline seam under the scaled, non-smoothed transform. Only the obstacle's
+ * gap-facing edge stays a rectangle boundary.
+ *
+ * Slice `i` covers tunnel distance `[i * sliceWidth, (i + 1) * sliceWidth)`; with
+ * the run scrolled `state.distance` px, its left edge sits at screen-x
+ * `i * sliceWidth - distance`.
  */
 function drawTunnel(ctx: CanvasRenderingContext2D, state: SimState): void {
 	const { width, height } = state.config.world;
@@ -64,19 +97,11 @@ function drawTunnel(ctx: CanvasRenderingContext2D, state: SimState): void {
 		const x = i * sliceWidth - state.distance;
 		// +1 keeps neighbouring slices seamless under the non-smoothed transform.
 		const w = sliceWidth + 1;
-		ctx.fillRect(x, 0, w, slice.top);
-		ctx.fillRect(x, slice.bottom, w, height - slice.bottom);
-		drawObstacle(ctx, slice, x, w);
-	}
-}
-
-function drawObstacle(ctx: CanvasRenderingContext2D, slice: Slice, x: number, w: number): void {
-	const { obstacle } = slice;
-	if (!obstacle) return;
-	if (obstacle.edge === "top") {
-		ctx.fillRect(x, slice.top, w, obstacle.depth);
-	} else {
-		ctx.fillRect(x, slice.bottom - obstacle.depth, w, obstacle.depth);
+		const { obstacle } = slice;
+		const topDepth = obstacle?.edge === "top" ? obstacle.depth : 0;
+		const bottomDepth = obstacle?.edge === "bottom" ? obstacle.depth : 0;
+		ctx.fillRect(x, 0, w, slice.top + topDepth);
+		ctx.fillRect(x, slice.bottom - bottomDepth, w, height - slice.bottom + bottomDepth);
 	}
 }
 
