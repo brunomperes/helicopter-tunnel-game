@@ -47,8 +47,8 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 		// On any change of mode (freeze, re-pause, or go-live), hold the
 		// accumulator and reset the frame clock so time spent frozen does not
 		// fast-forward the sim, mirroring the tab-hidden path. A countdown
-		// `tick` that only lowers `msLeft` keeps the same mode and is skipped
-		// here so the countdown keeps measuring real wall-clock time.
+		// `tick` that only lowers `msLeft` keeps the same mode, so the clock is
+		// left running and the countdown keeps measuring real wall-clock time.
 		if (modeChanged) last = performance.now();
 	};
 

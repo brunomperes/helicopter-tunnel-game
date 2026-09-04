@@ -24,6 +24,7 @@ export type PauseState =
 
 export const RUNNING: PauseState = { mode: "running" };
 export const PAUSED: PauseState = { mode: "paused" };
+const resuming = (msLeft: number): PauseState => ({ mode: "resuming", msLeft });
 
 export type PauseEvent =
 	/** The player pressed the pause key (Esc / P). Carries the current run phase. */
@@ -47,16 +48,19 @@ export function reducePause(state: PauseState, event: PauseEvent): PauseState {
 			// Thrust is the sole resume trigger: it starts the countdown from
 			// `paused`. Mid-countdown it does nothing — the press is not consumed,
 			// it just carries through to the first live tick.
-			return state.mode === "paused" ? { mode: "resuming", msLeft: RESUME_COUNTDOWN_MS } : state;
+			return state.mode === "paused" ? resuming(RESUME_COUNTDOWN_MS) : state;
 		case "tick": {
 			if (state.mode !== "resuming") return state;
 			const msLeft = state.msLeft - event.elapsedMs;
-			return msLeft <= 0 ? RUNNING : { mode: "resuming", msLeft };
+			return msLeft <= 0 ? RUNNING : resuming(msLeft);
 		}
 	}
 }
 
-/** The countdown digit to show for `msLeft`: `ceil(msLeft / 500)`, clamped to >= 1. */
+/**
+ * The countdown digit to show for `msLeft`: `ceil(msLeft / 500)`. Callers only
+ * reach this while `resuming`, where `msLeft` is always in `(0, 1500]`.
+ */
 export function countdownDigit(msLeft: number): number {
-	return Math.max(1, Math.ceil(msLeft / COUNTDOWN_DIGIT_MS));
+	return Math.ceil(msLeft / COUNTDOWN_DIGIT_MS);
 }
