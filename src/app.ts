@@ -3,7 +3,8 @@
  * The only place that touches wall-clock time. See ADR-0002.
  */
 
-import { createInputSource } from "./input/index.js";
+import { createInputSource, THRUST_KEYS } from "./input/index.js";
+import { type PauseMode, reducePause } from "./pause/index.js";
 import { render } from "./render/index.js";
 import { createInitialState, defaultConfig, step } from "./sim/index.js";
 import { loadBest, saveBest } from "./storage/index.js";
@@ -24,6 +25,7 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	let accumulator = 0;
 	let last = performance.now();
 	let running = true;
+	let pause: PauseMode = "running";
 
 	const fitCanvas = () => resizeCanvas(canvas, ctx, config.world.width, config.world.height);
 	fitCanvas();
@@ -34,21 +36,47 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	};
 	document.addEventListener("visibilitychange", onVisibility);
 
+	// Pause is a shell concern only — see ADR-0004. It never reaches the sim:
+	// a paused tick is simply one where `step` is not called.
+	const advancePause = (event: Parameters<typeof reducePause>[1]) => {
+		const next = reducePause(pause, event);
+		if (next === pause) return;
+		pause = next;
+		// Hold the accumulator and reset the frame clock so a long pause does
+		// not fast-forward the sim on resume, mirroring the tab-hidden path.
+		last = performance.now();
+	};
+
+	const onPauseKey = (e: KeyboardEvent) => {
+		if (e.code === "KeyP" || e.code === "Escape") {
+			// preventDefault on KeyP only — leave Escape for browser fullscreen-exit.
+			if (e.code === "KeyP") e.preventDefault();
+			advancePause({ type: "pauseKey", phase: state.phase });
+		} else if (THRUST_KEYS.has(e.code) && !e.repeat) {
+			// A genuine press resumes; ignore key-repeat so holding thrust while
+			// pausing doesn't immediately unpause.
+			advancePause({ type: "thrust" });
+		}
+	};
+	window.addEventListener("keydown", onPauseKey);
+
 	const frame = (now: number) => {
 		if (!running) return;
 		const delta = Math.min(now - last, MAX_FRAME_MS);
 		last = now;
-		accumulator += delta;
 
-		const thrust = document.hidden ? false : input.thrustHeld;
-		while (accumulator >= stepMs) {
-			const wasFlying = state.phase === "flying";
-			state = step(state, thrust);
-			if (wasFlying && state.phase === "wrecked") best = saveBest(state.distance);
-			accumulator -= stepMs;
+		if (pause === "running") {
+			accumulator += delta;
+			const thrust = document.hidden ? false : input.thrustHeld;
+			while (accumulator >= stepMs) {
+				const wasFlying = state.phase === "flying";
+				state = step(state, thrust);
+				if (wasFlying && state.phase === "wrecked") best = saveBest(state.distance);
+				accumulator -= stepMs;
+			}
 		}
 
-		render(ctx, state, { best, dev: import.meta.env.DEV });
+		render(ctx, state, { best, dev: import.meta.env.DEV, paused: pause === "paused" });
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);
@@ -57,6 +85,7 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 		running = false;
 		input.dispose();
 		window.removeEventListener("resize", fitCanvas);
+		window.removeEventListener("keydown", onPauseKey);
 		document.removeEventListener("visibilitychange", onVisibility);
 	};
 }

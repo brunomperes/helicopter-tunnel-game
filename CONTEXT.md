@@ -77,3 +77,10 @@ _Avoid_: Playing, active, in-game
 The post-crash state: this run's distance shown against the best, "press to retry"
 after a brief input lock.
 _Avoid_: Game over, dead, results
+
+### Pause
+
+Pause is orthogonal to Attract / Flying / Wrecked — it is not a Run state. It is a
+shell concern: while paused, the shell simply stops calling the sim's `step`, so
+the run and its determinism are untouched (ADR-0004). Pause exists only during a
+run in progress; the pause key is a no-op in Attract and Wrecked.
