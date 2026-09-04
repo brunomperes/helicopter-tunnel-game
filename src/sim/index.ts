@@ -31,6 +31,12 @@ export interface Helicopter {
 export interface SimState {
 	readonly config: Config;
 	readonly seed: string;
+	/**
+	 * Whether `seed` is pinned (launched with `?seed=`). When pinned the sim keeps
+	 * the same seed for every run in the session; when not, a run-start transition
+	 * swaps in the fresh seed the shell passes to `step`.
+	 */
+	readonly pinned: boolean;
 	readonly phase: Phase;
 	/** mulberry32 generator state. */
 	readonly rng: number;
@@ -72,10 +78,11 @@ function ensureTunnel(state: SimState): SimState {
 	return { ...state, tunnel: [...state.tunnel, ...slices], tunnelGen: gen };
 }
 
-export function createInitialState(seed: string, config: Config): SimState {
+export function createInitialState(seed: string, config: Config, pinned = false): SimState {
 	return ensureTunnel({
 		config,
 		seed,
+		pinned,
 		phase: "attract",
 		rng: hashSeed(seed),
 		tick: 0,
@@ -88,26 +95,33 @@ export function createInitialState(seed: string, config: Config): SimState {
 	});
 }
 
-/** Advance the simulation by exactly one fixed tick. Pure. */
-export function step(state: SimState, thrustHeld: boolean): SimState {
+/**
+ * Advance the simulation by exactly one fixed tick. Pure.
+ *
+ * `nextSeed` is a candidate fresh seed supplied by the shell. It is consumed only
+ * at a run-start transition, and only when the current seed is not pinned; every
+ * other tick ignores it. Omitting it keeps the current seed (used by tests).
+ */
+export function step(state: SimState, thrustHeld: boolean, nextSeed?: string): SimState {
 	const pressed = thrustHeld && !state.prevThrust;
 	const base = { ...state, prevThrust: thrustHeld };
 
 	switch (state.phase) {
 		case "attract":
-			return pressed ? startRun(base) : scrollDemo(base);
+			return pressed ? startRun(base, nextSeed) : scrollDemo(base);
 		case "flying":
 			return advanceRun(base, thrustHeld);
 		case "wrecked": {
 			const restartLock = Math.max(0, state.restartLock - 1);
-			if (pressed && restartLock === 0) return startRun(base);
+			if (pressed && restartLock === 0) return startRun(base, nextSeed);
 			return { ...base, restartLock };
 		}
 	}
 }
 
-function startRun(state: SimState): SimState {
-	const fresh = createInitialState(state.seed, state.config);
+function startRun(state: SimState, nextSeed?: string): SimState {
+	const seed = !state.pinned && nextSeed !== undefined ? nextSeed : state.seed;
+	const fresh = createInitialState(seed, state.config, state.pinned);
 	return { ...fresh, phase: "flying", prevThrust: true };
 }
 

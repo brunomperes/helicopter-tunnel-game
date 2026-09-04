@@ -13,14 +13,14 @@ const MAX_FRAME_MS = 250;
 
 export function startApp(canvas: HTMLCanvasElement): () => void {
 	const config = defaultConfig;
-	const seed = readSeed();
+	const { seed, pinned } = readSeed();
 	const ctx = canvas.getContext("2d");
 	if (!ctx) throw new Error("2d canvas context unavailable");
 
 	const input = createInputSource(canvas);
 	const stepMs = 1000 / config.tickHz;
 
-	let state = createInitialState(seed, config);
+	let state = createInitialState(seed, config, pinned);
 	let best = loadBest();
 	let accumulator = 0;
 	let last = performance.now();
@@ -92,7 +92,9 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 			const thrust = document.hidden ? false : input.thrustHeld;
 			while (accumulator >= stepMs) {
 				const wasFlying = state.phase === "flying";
-				state = step(state, thrust);
+				// A fresh candidate seed every tick; the sim only consumes it at a
+				// run-start transition, and only when the seed is not pinned.
+				state = step(state, thrust, randomSeed());
 				if (wasFlying && state.phase === "wrecked") best = saveBest(state.distance);
 				accumulator -= stepMs;
 			}
@@ -117,9 +119,20 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	};
 }
 
-function readSeed(): string {
+/**
+ * The run seed and whether it was pinned via `?seed=`. A pinned seed is reused for
+ * every run in the session; an unpinned one is a throwaway — the real per-run
+ * seeds come from `randomSeed()` on each tick.
+ */
+function readSeed(): { seed: string; pinned: boolean } {
 	const param = new URLSearchParams(window.location.search).get("seed");
-	return param && param.length > 0 ? param : Math.random().toString(36).slice(2, 10);
+	if (param && param.length > 0) return { seed: param, pinned: true };
+	return { seed: randomSeed(), pinned: false };
+}
+
+/** A fresh random seed string. Randomness is the shell's job, never the sim's. */
+function randomSeed(): string {
+	return Math.random().toString(36).slice(2, 10);
 }
 
 /** Integer-ish scale + letterbox the canvas to the viewport, rendering at dpr. */
