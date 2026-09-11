@@ -17,7 +17,7 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	const ctx = canvas.getContext("2d");
 	if (!ctx) throw new Error("2d canvas context unavailable");
 
-	const input = createInputSource(canvas);
+	const input = createInputSource();
 	const stepMs = 1000 / config.tickHz;
 
 	let state = createInitialState(seed, config, pinned);
