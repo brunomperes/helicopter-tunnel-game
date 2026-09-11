@@ -25,7 +25,16 @@ export interface Config {
 
 	readonly helicopter: {
 		readonly width: number;
-		readonly height: number;
+		/**
+		 * Hitbox extent above the sim anchor, px. Sized to the sprite's main
+		 * rotor blur bar, the highest solid pixels in `render/sprites.ts`.
+		 */
+		readonly topOffset: number;
+		/**
+		 * Hitbox extent below the sim anchor, px. Sized to the sprite's skids,
+		 * the lowest solid pixels in `render/sprites.ts`.
+		 */
+		readonly bottomOffset: number;
 		/** Fixed horizontal position as a fraction of world width. */
 		readonly xFrac: number;
 	};
@@ -86,7 +95,8 @@ export const defaultConfig: Config = {
 	},
 	helicopter: {
 		width: 46,
-		height: 20,
+		topOffset: 18,
+		bottomOffset: 10,
 		xFrac: 0.28,
 	},
 	scroll: {

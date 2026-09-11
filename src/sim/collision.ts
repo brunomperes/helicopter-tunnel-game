@@ -31,9 +31,8 @@ export function crashes(
 	tunnel: readonly Slice[],
 	distance: number,
 ): boolean {
-	const half = config.helicopter.height / 2;
-	const top = helicopter.y - half;
-	const bottom = helicopter.y + half;
+	const top = helicopter.y - config.helicopter.topOffset;
+	const bottom = helicopter.y + config.helicopter.bottomOffset;
 	const { first, last } = heliSliceRange(config, distance);
 
 	for (let i = first; i <= last; i++) {

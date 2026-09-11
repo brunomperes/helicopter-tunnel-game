@@ -18,8 +18,11 @@
  * point the sim simulates as `(x, y)`) in art-pixel coordinates from the
  * frame's top-left. To draw:
  *   screenTopLeft = (simX - ORIGIN.x * ART_PIXEL, simY - ORIGIN.y * ART_PIXEL)
- * The 46x20 logical collision box is centred on that same anchor; the rotor
- * span, tail rotor and skids deliberately overhang it (visual only).
+ * The collision box (`config.helicopter`: 46 wide, `topOffset` 18 above the
+ * anchor, `bottomOffset` 10 below) is fit to this sprite's solid pixels — the
+ * main rotor blur bar top and the skid bottom — so contact with either reads
+ * as a real hit. It's still narrower than the sprite horizontally, so the
+ * tail-rotor tip and rotor-blur tips overhang it slightly (visual only).
  */
 
 export const ART_PIXEL = 2;
