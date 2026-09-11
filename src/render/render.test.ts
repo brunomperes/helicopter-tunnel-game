@@ -18,9 +18,19 @@ interface Rect {
  * `fillText` / `strokeText` and the rectangles (with their fill colour) passed
  * to `fillRect`. Only the members `render` actually touches are implemented.
  */
+/** A rectangle passed to `strokeRect`, tagged with the `strokeStyle` in effect. */
+interface StrokedRect {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	strokeStyle: string;
+}
+
 function recordingCtx() {
 	const texts: string[] = [];
 	const rects: Rect[] = [];
+	const strokedRects: StrokedRect[] = [];
 	const ctx = {
 		fillStyle: "",
 		font: "",
@@ -32,6 +42,9 @@ function recordingCtx() {
 		fillRect(x: number, y: number, w: number, h: number) {
 			rects.push({ x, y, w, h, fillStyle: ctx.fillStyle });
 		},
+		strokeRect(x: number, y: number, w: number, h: number) {
+			strokedRects.push({ x, y, w, h, strokeStyle: ctx.strokeStyle });
+		},
 		fillText(text: string) {
 			texts.push(text);
 		},
@@ -39,7 +52,7 @@ function recordingCtx() {
 			texts.push(text);
 		},
 	};
-	return { ctx: ctx as unknown as CanvasRenderingContext2D, texts, rects };
+	return { ctx: ctx as unknown as CanvasRenderingContext2D, texts, rects, strokedRects };
 }
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
@@ -232,5 +245,53 @@ describe("render pause overlay", () => {
 		expect(texts).not.toContain("1");
 		expect(texts).not.toContain("2");
 		expect(texts).not.toContain("3");
+	});
+});
+
+describe("render dev collision box", () => {
+	function helicopterHitbox(state: SimState) {
+		const { world, helicopter } = state.config;
+		const x = world.width * helicopter.xFrac;
+		const y = state.helicopter.y;
+		return {
+			x: x - helicopter.width / 2,
+			y: y - helicopter.height / 2,
+			w: helicopter.width,
+			h: helicopter.height,
+		};
+	}
+
+	it("does not stroke a collision box when hud.dev is false", () => {
+		const state = flyingState();
+
+		const { ctx, strokedRects } = recordingCtx();
+		render(ctx, state, hud);
+
+		expect(strokedRects).toHaveLength(0);
+	});
+
+	it("strokes the helicopter's hitbox rect in the theme colour when hud.dev is true", () => {
+		const state = flyingState();
+		const box = helicopterHitbox(state);
+
+		const { ctx, strokedRects } = recordingCtx();
+		render(ctx, state, { ...hud, dev: true });
+
+		expect(strokedRects).toContainEqual({
+			x: box.x,
+			y: box.y,
+			w: box.w,
+			h: box.h,
+			strokeStyle: theme.collisionBox,
+		});
+	});
+
+	it("does not stroke a collision box on the attract screen even when hud.dev is true", () => {
+		const state = attractState();
+
+		const { ctx, strokedRects } = recordingCtx();
+		render(ctx, state, { ...hud, dev: true });
+
+		expect(strokedRects).toHaveLength(0);
 	});
 });

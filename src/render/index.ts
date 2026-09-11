@@ -30,6 +30,7 @@ export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudM
 
 	drawTunnel(ctx, state);
 	if (state.phase !== "attract") drawHelicopter(ctx, state);
+	if (hud.dev && state.phase !== "attract") drawCollisionBox(ctx, state);
 	if (state.phase !== "attract") drawHud(ctx, state, hud);
 	if (hud.dev) drawDevReadout(ctx, state);
 
@@ -105,19 +106,40 @@ function drawTunnel(ctx: CanvasRenderingContext2D, state: SimState): void {
 	}
 }
 
-function drawHelicopter(ctx: CanvasRenderingContext2D, state: SimState): void {
+/**
+ * The helicopter's hitbox rect — same bounds `drawHelicopter` fills and
+ * `crashes()` (src/sim/collision.ts) checks against. Shared so the dev
+ * collision-box overlay can't drift from the sprite it's meant to trace.
+ */
+function helicopterHitbox(state: SimState) {
 	const { world, helicopter } = state.config;
 	const x = world.width * helicopter.xFrac;
 	const y = state.helicopter.y;
+	return {
+		x: x - helicopter.width / 2,
+		y: y - helicopter.height / 2,
+		w: helicopter.width,
+		h: helicopter.height,
+	};
+}
+
+function drawHelicopter(ctx: CanvasRenderingContext2D, state: SimState): void {
+	const box = helicopterHitbox(state);
 	ctx.fillStyle = theme.helicopter;
-	ctx.fillRect(
-		x - helicopter.width / 2,
-		y - helicopter.height / 2,
-		helicopter.width,
-		helicopter.height,
-	);
+	ctx.fillRect(box.x, box.y, box.w, box.h);
 	ctx.fillStyle = theme.helicopterAccent;
-	ctx.fillRect(x - helicopter.width / 2, y - helicopter.height / 2, helicopter.width, 4);
+	ctx.fillRect(box.x, box.y, box.w, 4);
+}
+
+/**
+ * Dev-mode outline over the helicopter's hitbox rect — the exact bounds
+ * `crashes()` checks against — so the box is visible during playtesting.
+ * Stroke only, so the sprite underneath stays visible.
+ */
+function drawCollisionBox(ctx: CanvasRenderingContext2D, state: SimState): void {
+	const box = helicopterHitbox(state);
+	ctx.strokeStyle = theme.collisionBox;
+	ctx.strokeRect(box.x, box.y, box.w, box.h);
 }
 
 function drawHud(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
