@@ -255,9 +255,9 @@ describe("render dev collision box", () => {
 		const y = state.helicopter.y;
 		return {
 			x: x - helicopter.width / 2,
-			y: y - helicopter.height / 2,
+			y: y - helicopter.topOffset,
 			w: helicopter.width,
-			h: helicopter.height,
+			h: helicopter.topOffset + helicopter.bottomOffset,
 		};
 	}
 
