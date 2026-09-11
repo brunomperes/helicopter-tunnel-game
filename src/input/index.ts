@@ -11,7 +11,7 @@ export interface InputSource {
 	dispose(): void;
 }
 
-export function createInputSource(target: HTMLElement): InputSource {
+export function createInputSource(): InputSource {
 	let pointer = false;
 	let touch = false;
 	const keys = new Set<string>();
@@ -23,7 +23,11 @@ export function createInputSource(target: HTMLElement): InputSource {
 		}
 	};
 	const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code);
-	const onPointerDown = () => {
+	const onPointerDown = (e: PointerEvent) => {
+		// Ignore non-primary buttons (e.g. right-click) so opening a context menu
+		// can't leave `pointer` stuck true — the matching pointerup isn't
+		// guaranteed to fire once the browser's native menu takes over.
+		if (e.button !== 0) return;
 		pointer = true;
 	};
 	const onPointerUp = () => {
@@ -44,9 +48,9 @@ export function createInputSource(target: HTMLElement): InputSource {
 
 	window.addEventListener("keydown", onKeyDown);
 	window.addEventListener("keyup", onKeyUp);
-	target.addEventListener("pointerdown", onPointerDown);
+	window.addEventListener("pointerdown", onPointerDown);
 	window.addEventListener("pointerup", onPointerUp);
-	target.addEventListener("touchstart", onTouchStart, { passive: false });
+	window.addEventListener("touchstart", onTouchStart, { passive: false });
 	window.addEventListener("touchend", onTouchEnd);
 	window.addEventListener("blur", onBlur);
 
@@ -57,9 +61,9 @@ export function createInputSource(target: HTMLElement): InputSource {
 		dispose() {
 			window.removeEventListener("keydown", onKeyDown);
 			window.removeEventListener("keyup", onKeyUp);
-			target.removeEventListener("pointerdown", onPointerDown);
+			window.removeEventListener("pointerdown", onPointerDown);
 			window.removeEventListener("pointerup", onPointerUp);
-			target.removeEventListener("touchstart", onTouchStart);
+			window.removeEventListener("touchstart", onTouchStart);
 			window.removeEventListener("touchend", onTouchEnd);
 			window.removeEventListener("blur", onBlur);
 		},
