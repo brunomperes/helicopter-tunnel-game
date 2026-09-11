@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createInitialState, defaultConfig, type SimState, step } from "../sim/index.js";
 import { generateTunnel } from "../sim/tunnel.js";
-import { theme } from "../theme.js";
+import { spritePalette, theme } from "../theme.js";
 import { type HudModel, render } from "./index.js";
 
 interface Rect {
@@ -293,5 +293,27 @@ describe("render dev collision box", () => {
 		render(ctx, state, { ...hud, dev: true });
 
 		expect(strokedRects).toHaveLength(0);
+	});
+});
+
+describe("render helicopter sprite", () => {
+	it("blits the helicopter sprite while flying", () => {
+		const state = flyingState();
+
+		const { ctx, rects } = recordingCtx();
+		render(ctx, state, hud);
+
+		expect(rects.some((r) => r.fillStyle === spritePalette.M)).toBe(true);
+	});
+
+	it("blits the wreck sprite, not the helicopter, once wrecked", () => {
+		const base = flyingState();
+		const state = { ...base, phase: "wrecked" } as SimState;
+
+		const { ctx, rects } = recordingCtx();
+		render(ctx, state, hud);
+
+		const flameColors: string[] = [spritePalette.r, spritePalette.o, spritePalette.y];
+		expect(rects.some((r) => flameColors.includes(r.fillStyle))).toBe(true);
 	});
 });

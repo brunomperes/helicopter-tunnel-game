@@ -6,7 +6,8 @@
  */
 
 import { rampSpeed, type SimState } from "../sim/index.js";
-import { theme } from "../theme.js";
+import { spritePalette, theme } from "../theme.js";
+import { ART_PIXEL, ORIGIN, sprites } from "./sprites.js";
 
 export interface HudModel {
 	readonly best: number;
@@ -124,11 +125,37 @@ function helicopterHitbox(state: SimState) {
 }
 
 function drawHelicopter(ctx: CanvasRenderingContext2D, state: SimState): void {
-	const box = helicopterHitbox(state);
-	ctx.fillStyle = theme.helicopter;
-	ctx.fillRect(box.x, box.y, box.w, box.h);
-	ctx.fillStyle = theme.helicopterAccent;
-	ctx.fillRect(box.x, box.y, box.w, 4);
+	const { world, helicopter } = state.config;
+	const x = world.width * helicopter.xFrac;
+	const y = state.helicopter.y;
+	const frame = state.phase === "wrecked" ? sprites.wreck : sprites.helicopter;
+	blitSprite(ctx, frame, x, y);
+}
+
+/**
+ * Draws a sprite frame (rows of `PALETTE` keys / `.` for transparent) anchored
+ * at its sim position, per-cell with `fillRect` rather than `drawImage` — see
+ * `sprites.ts`'s header for why (the render test's fake context only stubs
+ * `fillRect`/`fillText`).
+ */
+function blitSprite(
+	ctx: CanvasRenderingContext2D,
+	frame: readonly string[],
+	anchorX: number,
+	anchorY: number,
+): void {
+	const left = Math.round(anchorX - ORIGIN.x * ART_PIXEL);
+	const top = Math.round(anchorY - ORIGIN.y * ART_PIXEL);
+	for (let row = 0; row < frame.length; row++) {
+		const line = frame[row];
+		if (!line) continue;
+		for (let col = 0; col < line.length; col++) {
+			const ch = line[col];
+			if (!ch || ch === ".") continue;
+			ctx.fillStyle = spritePalette[ch as keyof typeof spritePalette];
+			ctx.fillRect(left + col * ART_PIXEL, top + row * ART_PIXEL, ART_PIXEL, ART_PIXEL);
+		}
+	}
 }
 
 /**
