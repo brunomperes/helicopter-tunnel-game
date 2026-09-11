@@ -10,6 +10,8 @@ export const theme = {
 	helicopterAccent: "#2b6fd8",
 	hudText: "#ffffff",
 	devText: "#ffe14d",
+	/** Dev-mode collision box outline, drawn over the helicopter's hitbox. */
+	collisionBox: "#ff3ddc",
 	overlayText: "#ffffff",
 	overlayScrim: "rgba(0, 0, 0, 0.55)",
 	/** Resume countdown digit: white core + dark outline so it reads over the
