@@ -85,33 +85,6 @@ function flyingState(): SimState {
 	return state;
 }
 
-describe("render HUD gating", () => {
-	it("does not draw the DISTANCE readout on the attract screen", () => {
-		const state = attractState();
-		expect(state.phase).toBe("attract");
-		expect(state.distance).toBeGreaterThan(0);
-
-		const { ctx, texts } = recordingCtx();
-		render(ctx, state, hud);
-
-		// The bottom HUD (DISTANCE / BEST readout) is the thing being gated.
-		// `drawAttract` still shows `BEST` centre-screen, so DISTANCE is the
-		// unambiguous marker that the bottom HUD ran.
-		expect(texts.some((t) => t.includes("DISTANCE"))).toBe(false);
-	});
-
-	it("draws the DISTANCE readout while flying", () => {
-		const state = flyingState();
-		expect(state.phase).toBe("flying");
-
-		const { ctx, texts } = recordingCtx();
-		render(ctx, state, hud);
-
-		expect(texts.some((t) => t.startsWith("DISTANCE:"))).toBe(true);
-		expect(texts.some((t) => t.startsWith("BEST:"))).toBe(true);
-	});
-});
-
 /**
  * Build a flying state whose on-screen tunnel is a known slice list, positioned
  * so slice `focusIndex` sits a little way in from the left edge.
@@ -224,37 +197,26 @@ describe("render attract overlay", () => {
 });
 
 describe("render pause overlay", () => {
-	it("draws the PAUSED overlay only when the hud flag is set", () => {
+	it("dims the tunnel when paused and leaves it visible during the countdown", () => {
 		const state = flyingState();
-
-		const off = recordingCtx();
-		render(off.ctx, state, hud);
-		expect(off.texts).not.toContain("PAUSED");
-
-		const on = recordingCtx();
-		render(on.ctx, state, { ...hud, paused: true });
-		expect(on.texts).toContain("PAUSED");
+		const paused = recordingCtx();
+		render(paused.ctx, state, { ...hud, paused: true });
+		expect(paused.rects.some((r) => r.fillStyle === theme.overlayScrim)).toBe(true);
+		const resuming = recordingCtx();
+		render(resuming.ctx, state, { ...hud, resumeDigit: 2 });
+		expect(resuming.rects.some((r) => r.fillStyle === theme.overlayScrim)).toBe(false);
 	});
 
-	it("draws the resume countdown digit — and not PAUSED — during a countdown", () => {
-		const state = flyingState();
-
-		const { ctx, texts } = recordingCtx();
-		render(ctx, state, { ...hud, paused: false, resumeDigit: 2 });
-
-		expect(texts).toContain("2");
-		expect(texts).not.toContain("PAUSED");
-	});
-
-	it("draws no countdown digit when resumeDigit is null", () => {
-		const state = flyingState();
-
-		const { ctx, texts } = recordingCtx();
-		render(ctx, state, hud);
-
-		expect(texts).not.toContain("1");
-		expect(texts).not.toContain("2");
-		expect(texts).not.toContain("3");
+	it("leaves text to the HTML UI in every run state", () => {
+		for (const state of [
+			attractState(),
+			flyingState(),
+			{ ...flyingState(), phase: "wrecked" } as SimState,
+		]) {
+			const { ctx, texts } = recordingCtx();
+			render(ctx, state, { ...hud, dev: true, paused: true, resumeDigit: 3 });
+			expect(texts).toEqual([]);
+		}
 	});
 });
 

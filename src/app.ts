@@ -9,10 +9,11 @@ import { render } from "./render/index.js";
 import { advanceSmokeTrail, type SmokePuff } from "./render/smoke.js";
 import { createInitialState, defaultConfig, step } from "./sim/index.js";
 import { loadBest, saveBest } from "./storage/index.js";
+import type { GameUi } from "./ui.js";
 
 const MAX_FRAME_MS = 250;
 
-export function startApp(canvas: HTMLCanvasElement): () => void {
+export function startApp(canvas: HTMLCanvasElement, ui?: GameUi): () => void {
 	const config = defaultConfig;
 	const { seed, pinned } = readSeed();
 	const ctx = canvas.getContext("2d");
@@ -28,9 +29,21 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	let running = true;
 	let pause: PauseState = { mode: "running" };
 
-	const fitCanvas = () => resizeCanvas(canvas, ctx, config.world.width, config.world.height);
+	const fitCanvas = () =>
+		resizeCanvas(canvas, ctx, config.world.width, config.world.height, ui?.area);
 	fitCanvas();
 	window.addEventListener("resize", fitCanvas);
+	let resizeFrame: number | null = null;
+	const observer = ui
+		? new ResizeObserver(() => {
+				if (resizeFrame !== null) return;
+				resizeFrame = requestAnimationFrame(() => {
+					resizeFrame = null;
+					fitCanvas();
+				});
+			})
+		: null;
+	if (ui) observer?.observe(ui.area);
 
 	// Pretend no wall-clock time passed since the last frame, so a stretch spent
 	// frozen or with the tab hidden doesn't become a burst of catch-up sim ticks
@@ -102,17 +115,14 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 			}
 		}
 
-		render(
-			ctx,
-			state,
-			{
-				best,
-				dev: import.meta.env.DEV,
-				paused: pause.mode === "paused",
-				resumeDigit: pause.mode === "resuming" ? countdownDigit(pause.msLeft) : null,
-			},
-			smoke,
-		);
+		const hud = {
+			best,
+			dev: import.meta.env.DEV,
+			paused: pause.mode === "paused",
+			resumeDigit: pause.mode === "resuming" ? countdownDigit(pause.msLeft) : null,
+		};
+		render(ctx, state, hud, smoke);
+		ui?.update(state, hud);
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);
@@ -120,6 +130,8 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	return () => {
 		running = false;
 		input.dispose();
+		observer?.disconnect();
+		if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
 		window.removeEventListener("resize", fitCanvas);
 		window.removeEventListener("keydown", onPauseKey);
 		document.removeEventListener("visibilitychange", onVisibility);
@@ -148,9 +160,13 @@ function resizeCanvas(
 	ctx: CanvasRenderingContext2D,
 	logicalW: number,
 	logicalH: number,
+	area?: HTMLElement,
 ): void {
 	const dpr = window.devicePixelRatio || 1;
-	const scale = Math.min(window.innerWidth / logicalW, window.innerHeight / logicalH);
+	const scale = Math.min(
+		(area?.clientWidth ?? window.innerWidth) / logicalW,
+		(area?.clientHeight ?? window.innerHeight) / logicalH,
+	);
 	canvas.style.width = `${logicalW * scale}px`;
 	canvas.style.height = `${logicalH * scale}px`;
 	canvas.width = Math.round(logicalW * scale * dpr);

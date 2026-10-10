@@ -1,18 +1,17 @@
 /**
  * Draws a sim state onto a canvas context. Read-only with respect to the sim.
  *
- * SCAFFOLD STATUS: draws the tunnel (edges + obstacles), helicopter, HUD and
- * phase overlays. Colours are the placeholder palette; the art pass is deferred.
+ * Draws the tunnel, helicopter and overlay scrim. Text lives in the HTML UI.
  */
 
-import { rampSpeed, type SimState } from "../sim/index.js";
+import type { SimState } from "../sim/index.js";
 import { spritePalette, theme } from "../theme.js";
 import { SMOKE_LIFETIME_SECONDS, type SmokePuff } from "./smoke.js";
 import { ART_PIXEL, ORIGIN, sprites } from "./sprites.js";
 
 export interface HudModel {
 	readonly best: number;
-	/** When true, draw the dev/playtest readout (speed + distance). */
+	/** When true, draw the dev collision box. */
 	readonly dev: boolean;
 	/** When true, the run is statically paused (ADR-0004): draw the scrim + PAUSED title. */
 	readonly paused: boolean;
@@ -39,13 +38,9 @@ export function render(
 	drawTunnel(ctx, state);
 	if (state.phase !== "attract") drawHelicopter(ctx, state);
 	if (hud.dev && state.phase !== "attract") drawCollisionBox(ctx, state);
-	if (state.phase !== "attract") drawHud(ctx, state, hud);
-	if (hud.dev) drawDevReadout(ctx, state);
-
-	if (state.phase === "attract") drawAttract(ctx, state, hud);
-	if (state.phase === "wrecked") drawWrecked(ctx, state, hud);
-	if (hud.paused) drawPaused(ctx, state);
-	if (hud.resumeDigit !== null) drawResumeCountdown(ctx, state, hud.resumeDigit);
+	if (state.phase === "attract" || state.phase === "wrecked" || hud.paused) {
+		drawScrim(ctx, width, height);
+	}
 }
 
 /** Draw behind the tunnel so exhaust never paints over solid walls. */
@@ -83,33 +78,6 @@ function drawSmoke(
 			ctx.fillRect(x, y + 2, size, size - 4);
 		}
 	}
-}
-
-/** Full-screen PAUSED overlay: scrim + centred title, mirroring `drawWrecked`. */
-function drawPaused(ctx: CanvasRenderingContext2D, state: SimState): void {
-	const { width, height } = state.config.world;
-	drawScrim(ctx, width, height);
-	centeredText(ctx, "PAUSED", width / 2, height / 2, theme.titleFont);
-}
-
-/**
- * Resume countdown: just the large centred digit over the frozen field — no
- * scrim, so the player can read the tunnel before re-entering motion. Drawn as
- * a white glyph with a thick dark outline so it stays legible where it overlaps
- * the green tunnel fill.
- */
-function drawResumeCountdown(ctx: CanvasRenderingContext2D, state: SimState, digit: number): void {
-	const { width, height } = state.config.world;
-	const text = String(digit);
-	ctx.font = theme.countdownFont;
-	ctx.textAlign = "center";
-	ctx.textBaseline = "middle";
-	ctx.lineJoin = "round";
-	ctx.lineWidth = 8;
-	ctx.strokeStyle = theme.countdownOutline;
-	ctx.strokeText(text, width / 2, height / 2);
-	ctx.fillStyle = theme.countdownText;
-	ctx.fillText(text, width / 2, height / 2);
 }
 
 /** Dim the whole world so an overlay title reads on top of it. */
@@ -206,77 +174,8 @@ function blitSprite(
  */
 function drawCollisionBox(ctx: CanvasRenderingContext2D, state: SimState): void {
 	const box = helicopterHitbox(state);
-	// The resume countdown uses a thick, rounded text stroke on this context.
 	ctx.lineWidth = 1;
 	ctx.lineJoin = "miter";
 	ctx.strokeStyle = theme.collisionBox;
 	ctx.strokeRect(box.x, box.y, box.w, box.h);
-}
-
-function drawHud(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
-	const y = state.config.world.height - 16;
-	ctx.fillStyle = theme.hudText;
-	ctx.font = theme.hudFont;
-	ctx.textBaseline = "alphabetic";
-	ctx.textAlign = "left";
-	ctx.fillText(`DISTANCE: ${Math.floor(state.distance)}`, 16, y);
-	ctx.textAlign = "right";
-	ctx.fillText(`BEST: ${hud.best}`, state.config.world.width - 16, y);
-}
-
-/**
- * Dev/playtest readout, top-left: current scroll speed (post-ramp) and distance.
- * Gated on `hud.dev` so it never ships in a production build.
- */
-function drawDevReadout(ctx: CanvasRenderingContext2D, state: SimState): void {
-	const speed = rampSpeed(state.config, state.distance);
-	ctx.fillStyle = theme.devText;
-	ctx.font = theme.hudFont;
-	ctx.textBaseline = "top";
-	ctx.textAlign = "left";
-	ctx.fillText(`SPEED: ${speed.toFixed(1)} px/s`, 16, 16);
-	ctx.fillText(`DIST:  ${Math.floor(state.distance)}`, 16, 34);
-}
-
-function drawAttract(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
-	const { width, height } = state.config.world;
-	drawScrim(ctx, width, height);
-	centeredText(ctx, "TAP TO START", width / 2, height / 2 - 8, theme.titleFont);
-	centeredText(
-		ctx,
-		"HOLD TO GO UP · RELEASE TO GO DOWN",
-		width / 2,
-		height / 2 + 28,
-		theme.hudFont,
-	);
-	if (hud.best > 0) {
-		centeredText(ctx, `BEST: ${hud.best}`, width / 2, height / 2 + 52, theme.hudFont);
-	}
-}
-
-function drawWrecked(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
-	const { width, height } = state.config.world;
-	drawScrim(ctx, width, height);
-	const distance = Math.floor(state.distance);
-	const isBest = distance >= hud.best && distance > 0;
-	centeredText(ctx, isBest ? "NEW BEST" : "WRECKED", width / 2, height / 2 - 24, theme.titleFont);
-	centeredText(ctx, `DISTANCE: ${distance}`, width / 2, height / 2 + 8, theme.hudFont);
-	if (!isBest) centeredText(ctx, `BEST: ${hud.best}`, width / 2, height / 2 + 30, theme.hudFont);
-	if (state.restartLock === 0) {
-		centeredText(ctx, "TAP TO RETRY", width / 2, height / 2 + 58, theme.hudFont);
-	}
-}
-
-function centeredText(
-	ctx: CanvasRenderingContext2D,
-	text: string,
-	x: number,
-	y: number,
-	font: string,
-): void {
-	ctx.fillStyle = theme.overlayText;
-	ctx.font = font;
-	ctx.textAlign = "center";
-	ctx.textBaseline = "middle";
-	ctx.fillText(text, x, y);
 }
