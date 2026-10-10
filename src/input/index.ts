@@ -12,7 +12,7 @@ export interface InputSource {
 }
 
 export function createInputSource(): InputSource {
-	let pointer = false;
+	const pointers = new Set<number>();
 	let touch = false;
 	const keys = new Set<string>();
 
@@ -25,13 +25,13 @@ export function createInputSource(): InputSource {
 	const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code);
 	const onPointerDown = (e: PointerEvent) => {
 		// Ignore non-primary buttons (e.g. right-click) so opening a context menu
-		// can't leave `pointer` stuck true — the matching pointerup isn't
+		// can't leave a pointer held — the matching pointerup isn't
 		// guaranteed to fire once the browser's native menu takes over.
 		if (e.button !== 0) return;
-		pointer = true;
+		pointers.add(e.pointerId);
 	};
-	const onPointerUp = () => {
-		pointer = false;
+	const onPointerUp = (e: PointerEvent) => {
+		pointers.delete(e.pointerId);
 	};
 	const onTouchStart = (e: TouchEvent) => {
 		touch = true;
@@ -41,7 +41,7 @@ export function createInputSource(): InputSource {
 		touch = e.touches.length > 0;
 	};
 	const onBlur = () => {
-		pointer = false;
+		pointers.clear();
 		touch = false;
 		keys.clear();
 	};
@@ -56,7 +56,7 @@ export function createInputSource(): InputSource {
 
 	return {
 		get thrustHeld() {
-			return pointer || touch || keys.size > 0;
+			return pointers.size > 0 || touch || keys.size > 0;
 		},
 		dispose() {
 			window.removeEventListener("keydown", onKeyDown);
