@@ -35,7 +35,7 @@ export type PauseEvent =
 	| { readonly type: "pauseKey"; readonly phase: Phase }
 	/** The tab became hidden (auto-pause). Carries the current run phase. */
 	| { readonly type: "tabHidden"; readonly phase: Phase }
-	/** The player pressed thrust (Space / ArrowUp). */
+	/** The player pressed thrust (keyboard, pointer or touch). */
 	| { readonly type: "thrust" }
 	/** A frame elapsed: advance the resume countdown by `elapsedMs` wall-clock ms. */
 	| { readonly type: "tick"; readonly elapsedMs: number };
