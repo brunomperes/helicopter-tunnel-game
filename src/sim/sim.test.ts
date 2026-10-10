@@ -282,7 +282,7 @@ describe("tunnel generation", () => {
 	});
 
 	it("keeps the effective opening at least a helicopter plus clearance, for many seeds", () => {
-		const floor = c.helicopter.height + c.tunnel.clearance;
+		const floor = c.helicopter.topOffset + c.helicopter.bottomOffset + c.tunnel.clearance;
 		for (const seed of seeds) {
 			for (const s of generateTunnel(seed, c, 8000)) {
 				expect(opening(s)).toBeGreaterThanOrEqual(floor - 1e-9);
@@ -293,7 +293,7 @@ describe("tunnel generation", () => {
 	it("keeps the opening clear through the whole of a mid-ramp obstacle block", () => {
 		// Blocks that sit entirely inside the narrowing ramp are where a depth sized
 		// off the block's leading (wider) gap would over-cut its trailing slices.
-		const floor = c.helicopter.height + c.tunnel.clearance;
+		const floor = c.helicopter.topOffset + c.helicopter.bottomOffset + c.tunnel.clearance;
 		let midRampBlocks = 0;
 		for (const seed of seeds) {
 			const slices = generateTunnel(seed, c, 8000);
@@ -405,13 +405,13 @@ describe("sim lifecycle", () => {
 	it("crashes into the tunnel floor edge, well above the world floor, when never thrusting", () => {
 		const c = defaultConfig;
 		const crashed = flyUntilCrash("alpha");
-		const half = c.helicopter.height / 2;
+		const { bottomOffset } = c.helicopter;
 		// The grace corridor's floor edge sits at worldHeight/2 + startGap/2 = 430,
 		// a full 100px above the 540 world floor the stub used.
 		const graceFloor = c.world.height / 2 + c.tunnel.startGap / 2;
 		expect(crashed.phase).toBe("wrecked");
-		expect(crashed.helicopter.y + half).toBeGreaterThan(graceFloor - c.tunnel.sliceWidth);
-		expect(crashed.helicopter.y + half).toBeLessThan(c.world.height - 20);
+		expect(crashed.helicopter.y + bottomOffset).toBeGreaterThan(graceFloor - c.tunnel.sliceWidth);
+		expect(crashed.helicopter.y + bottomOffset).toBeLessThan(c.world.height - 20);
 	});
 
 	it("does not crash inside the centred, obstacle-free grace corridor while roughly hovering", () => {
@@ -430,11 +430,11 @@ describe("sim lifecycle", () => {
 	it("crashes into the tunnel ceiling edge when thrust is held continuously", () => {
 		const c = defaultConfig;
 		const crashed = flyUntilCrash("alpha", true);
-		const half = c.helicopter.height / 2;
+		const { topOffset } = c.helicopter;
 		const graceCeil = c.world.height / 2 - c.tunnel.startGap / 2;
 		expect(crashed.phase).toBe("wrecked");
-		expect(crashed.helicopter.y - half).toBeGreaterThanOrEqual(0);
-		expect(crashed.helicopter.y - half).toBeLessThan(graceCeil + c.tunnel.sliceWidth);
+		expect(crashed.helicopter.y - topOffset).toBeGreaterThanOrEqual(0);
+		expect(crashed.helicopter.y - topOffset).toBeLessThan(graceCeil + c.tunnel.sliceWidth);
 	});
 
 	it("keeps the generated tunnel at least a screen ahead of the helicopter", () => {

@@ -100,7 +100,7 @@ export function extendTunnel(
 	const graceDistance = config.ramp.graceDistance;
 	const { sliceWidth, clearance, obstacleInterval, obstacleMinSlices, obstacleMaxSlices } =
 		config.tunnel;
-	const heliHeight = config.helicopter.height;
+	const heliHeight = config.helicopter.topOffset + config.helicopter.bottomOffset;
 
 	let {
 		rng,

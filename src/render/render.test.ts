@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createInitialState, defaultConfig, type SimState, step } from "../sim/index.js";
 import { generateTunnel } from "../sim/tunnel.js";
-import { theme } from "../theme.js";
+import { spritePalette, theme } from "../theme.js";
 import { type HudModel, render } from "./index.js";
 
 interface Rect {
@@ -25,6 +25,8 @@ interface StrokedRect {
 	w: number;
 	h: number;
 	strokeStyle: string;
+	lineWidth: number;
+	lineJoin: string;
 }
 
 function recordingCtx() {
@@ -36,14 +38,22 @@ function recordingCtx() {
 		font: "",
 		textBaseline: "",
 		textAlign: "",
-		lineJoin: "",
-		lineWidth: 0,
+		lineJoin: "miter",
+		lineWidth: 1,
 		strokeStyle: "",
 		fillRect(x: number, y: number, w: number, h: number) {
 			rects.push({ x, y, w, h, fillStyle: ctx.fillStyle });
 		},
 		strokeRect(x: number, y: number, w: number, h: number) {
-			strokedRects.push({ x, y, w, h, strokeStyle: ctx.strokeStyle });
+			strokedRects.push({
+				x,
+				y,
+				w,
+				h,
+				strokeStyle: ctx.strokeStyle,
+				lineWidth: ctx.lineWidth,
+				lineJoin: ctx.lineJoin,
+			});
 		},
 		fillText(text: string) {
 			texts.push(text);
@@ -255,9 +265,9 @@ describe("render dev collision box", () => {
 		const y = state.helicopter.y;
 		return {
 			x: x - helicopter.width / 2,
-			y: y - helicopter.height / 2,
+			y: y - helicopter.topOffset,
 			w: helicopter.width,
-			h: helicopter.height,
+			h: helicopter.topOffset + helicopter.bottomOffset,
 		};
 	}
 
@@ -283,7 +293,22 @@ describe("render dev collision box", () => {
 			w: box.w,
 			h: box.h,
 			strokeStyle: theme.collisionBox,
+			lineWidth: 1,
+			lineJoin: "miter",
 		});
+	});
+
+	it("keeps the collision outline unchanged through pause, countdown and resume", () => {
+		const state = flyingState();
+		const { ctx, strokedRects } = recordingCtx();
+		render(ctx, state, { ...hud, dev: true });
+		const original = strokedRects[0];
+		render(ctx, state, { ...hud, dev: true, paused: true });
+		for (const resumeDigit of [3, 2, 1]) {
+			render(ctx, state, { ...hud, dev: true, resumeDigit });
+		}
+		render(ctx, state, { ...hud, dev: true });
+		for (const rect of strokedRects) expect(rect).toEqual(original);
 	});
 
 	it("does not stroke a collision box on the attract screen even when hud.dev is true", () => {
@@ -293,5 +318,27 @@ describe("render dev collision box", () => {
 		render(ctx, state, { ...hud, dev: true });
 
 		expect(strokedRects).toHaveLength(0);
+	});
+});
+
+describe("render helicopter sprite", () => {
+	it("blits the helicopter sprite while flying", () => {
+		const state = flyingState();
+
+		const { ctx, rects } = recordingCtx();
+		render(ctx, state, hud);
+
+		expect(rects.some((r) => r.fillStyle === spritePalette.M)).toBe(true);
+	});
+
+	it("blits the wreck sprite, not the helicopter, once wrecked", () => {
+		const base = flyingState();
+		const state = { ...base, phase: "wrecked" } as SimState;
+
+		const { ctx, rects } = recordingCtx();
+		render(ctx, state, hud);
+
+		const flameColors: string[] = [spritePalette.r, spritePalette.o, spritePalette.y];
+		expect(rects.some((r) => flameColors.includes(r.fillStyle))).toBe(true);
 	});
 });
