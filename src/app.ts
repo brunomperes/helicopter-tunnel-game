@@ -6,6 +6,7 @@
 import { createInputSource, THRUST_KEYS } from "./input/index.js";
 import { countdownDigit, type PauseEvent, type PauseState, reducePause } from "./pause/index.js";
 import { render } from "./render/index.js";
+import { advanceSmokeTrail, type SmokePuff } from "./render/smoke.js";
 import { createInitialState, defaultConfig, step } from "./sim/index.js";
 import { loadBest, saveBest } from "./storage/index.js";
 
@@ -21,6 +22,7 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	const stepMs = 1000 / config.tickHz;
 
 	let state = createInitialState(seed, config, pinned);
+	let smoke: readonly SmokePuff[] = [];
 	let best = loadBest();
 	let accumulator = 0;
 	let last = performance.now();
@@ -95,17 +97,23 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 				// A fresh candidate seed every tick; the sim only consumes it at a
 				// run-start transition, and only when the seed is not pinned.
 				state = step(state, thrust, randomSeed());
+				smoke = advanceSmokeTrail(smoke, state);
 				if (wasFlying && state.phase === "wrecked") best = saveBest(state.distance);
 				accumulator -= stepMs;
 			}
 		}
 
-		render(ctx, state, {
-			best,
-			dev: import.meta.env.DEV,
-			paused: pause.mode === "paused",
-			resumeDigit: pause.mode === "resuming" ? countdownDigit(pause.msLeft) : null,
-		});
+		render(
+			ctx,
+			state,
+			{
+				best,
+				dev: import.meta.env.DEV,
+				paused: pause.mode === "paused",
+				resumeDigit: pause.mode === "resuming" ? countdownDigit(pause.msLeft) : null,
+			},
+			smoke,
+		);
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);
