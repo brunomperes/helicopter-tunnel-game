@@ -20,16 +20,77 @@
 			}
 			body {
 				display: flex;
+				flex-direction: column;
+				height: 100dvh;
+				color: white;
+				font: 1rem/1.4 monospace;
+				user-select: none;
+				box-sizing: border-box;
+				padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+			}
+			#play-area {
+				flex: 1;
+				min-height: 0;
+				display: flex;
 				align-items: center;
 				justify-content: center;
 			}
-			#game {
-				display: block;
+			#stage { position: relative; }
+			#game { display: block; }
+			#overlay, #countdown {
+				position: absolute;
+				inset: 0;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 0.75rem;
+				text-align: center;
+				pointer-events: none;
 			}
+			#overlay { padding: 0.5rem; }
+			#overlay-title { font-size: 1.5rem; font-weight: bold; }
+			#instructions span { display: block; }
+			#countdown { font-size: 4.5rem; font-weight: bold; text-shadow: 0 0 0.25rem black, 0 0 0.5rem black; }
+			#readouts {
+				flex: none;
+				box-sizing: border-box;
+				width: 100%;
+				padding: 0.75rem 1rem;
+				display: flex;
+				flex-wrap: wrap;
+				justify-content: space-between;
+				gap: 0.5rem 1rem;
+			}
+			#dev-readout {
+				position: fixed;
+				top: calc(0.75rem + env(safe-area-inset-top));
+				left: calc(1rem + env(safe-area-inset-left));
+				right: calc(1rem + env(safe-area-inset-right));
+				color: #ffe14d;
+				text-shadow: 0 0 0.25rem black;
+				pointer-events: none;
+			}
+			[hidden] { display: none !important; }
 		</style>
 	</head>
 	<body>
-		<canvas id="game"></canvas>
+		<main id="play-area">
+			<div id="stage">
+				<canvas id="game" aria-label="Helicopter tunnel game"></canvas>
+				<div id="overlay">
+					<div id="overlay-title">TAP TO START</div>
+					<div id="instructions"><span>HOLD TO GO UP</span><span>RELEASE TO GO DOWN</span></div>
+					<div id="retry" hidden>TAP TO RETRY</div>
+				</div>
+				<div id="countdown" hidden></div>
+			</div>
+		</main>
+		<footer id="readouts">
+			<span id="distance" hidden></span>
+			<span id="best">BEST: 0</span>
+		</footer>
+		<div id="dev-readout" hidden></div>
 		<script type="module" src="/src/main.ts"></script>
 	</body>
 </html>
