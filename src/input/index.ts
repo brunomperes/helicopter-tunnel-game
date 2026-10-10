@@ -11,15 +11,18 @@ export interface InputSource {
 	dispose(): void;
 }
 
-export function createInputSource(): InputSource {
+/** Notify the shell immediately on a fresh thrust press, including brief taps. */
+export function createInputSource(onThrustPress: () => void = () => {}): InputSource {
 	const pointers = new Set<number>();
 	let touch = false;
 	const keys = new Set<string>();
 
 	const onKeyDown = (e: KeyboardEvent) => {
 		if (THRUST_KEYS.has(e.code)) {
+			const fresh = !e.repeat && !keys.has(e.code);
 			keys.add(e.code);
 			e.preventDefault();
+			if (fresh) onThrustPress();
 		}
 	};
 	const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code);
@@ -28,14 +31,18 @@ export function createInputSource(): InputSource {
 		// can't leave a pointer held — the matching pointerup isn't
 		// guaranteed to fire once the browser's native menu takes over.
 		if (e.button !== 0) return;
+		const fresh = !pointers.has(e.pointerId);
 		pointers.add(e.pointerId);
+		if (fresh) onThrustPress();
 	};
 	const onPointerUp = (e: PointerEvent) => {
 		pointers.delete(e.pointerId);
 	};
 	const onTouchStart = (e: TouchEvent) => {
+		const fresh = !touch;
 		touch = true;
 		e.preventDefault();
+		if (fresh) onThrustPress();
 	};
 	const onTouchEnd = (e: TouchEvent) => {
 		touch = e.touches.length > 0;

@@ -3,7 +3,7 @@
  * The only place that touches wall-clock time. See ADR-0002.
  */
 
-import { createInputSource, THRUST_KEYS } from "./input/index.js";
+import { createInputSource } from "./input/index.js";
 import { countdownDigit, type PauseEvent, type PauseState, reducePause } from "./pause/index.js";
 import { render } from "./render/index.js";
 import { advanceSmokeTrail, type SmokePuff } from "./render/smoke.js";
@@ -18,7 +18,6 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 	const ctx = canvas.getContext("2d");
 	if (!ctx) throw new Error("2d canvas context unavailable");
 
-	const input = createInputSource();
 	const stepMs = 1000 / config.tickHz;
 
 	let state = createInitialState(seed, config, pinned);
@@ -54,15 +53,15 @@ export function startApp(canvas: HTMLCanvasElement): () => void {
 		if (modeChanged) holdFrameClock();
 	};
 
+	// Event-driven so a tap released between animation frames still resumes.
+	// Held inputs and keyboard repeats don't count as fresh presses.
+	const input = createInputSource(() => advancePause({ type: "thrust" }));
+
 	const onPauseKey = (e: KeyboardEvent) => {
 		if (e.code === "KeyP" || e.code === "Escape") {
 			// preventDefault on KeyP only — leave Escape for browser fullscreen-exit.
 			if (e.code === "KeyP") e.preventDefault();
 			advancePause({ type: "pauseKey", phase: state.phase });
-		} else if (THRUST_KEYS.has(e.code) && !e.repeat) {
-			// A genuine press resumes; ignore key-repeat so holding thrust while
-			// pausing doesn't immediately unpause.
-			advancePause({ type: "thrust" });
 		}
 	};
 	window.addEventListener("keydown", onPauseKey);
