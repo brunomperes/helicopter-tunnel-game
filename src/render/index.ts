@@ -7,6 +7,7 @@
 
 import { rampSpeed, type SimState } from "../sim/index.js";
 import { spritePalette, theme } from "../theme.js";
+import { SMOKE_LIFETIME_SECONDS, type SmokePuff } from "./smoke.js";
 import { ART_PIXEL, ORIGIN, sprites } from "./sprites.js";
 
 export interface HudModel {
@@ -23,12 +24,18 @@ export interface HudModel {
 	readonly resumeDigit: number | null;
 }
 
-export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudModel): void {
+export function render(
+	ctx: CanvasRenderingContext2D,
+	state: SimState,
+	hud: HudModel,
+	smoke: readonly SmokePuff[] = [],
+): void {
 	const { width, height } = state.config.world;
 
 	ctx.fillStyle = theme.background;
 	ctx.fillRect(0, 0, width, height);
 
+	if (state.phase !== "attract") drawSmoke(ctx, state, smoke);
 	drawTunnel(ctx, state);
 	if (state.phase !== "attract") drawHelicopter(ctx, state);
 	if (hud.dev && state.phase !== "attract") drawCollisionBox(ctx, state);
@@ -39,6 +46,43 @@ export function render(ctx: CanvasRenderingContext2D, state: SimState, hud: HudM
 	if (state.phase === "wrecked") drawWrecked(ctx, state, hud);
 	if (hud.paused) drawPaused(ctx, state);
 	if (hud.resumeDigit !== null) drawResumeCountdown(ctx, state, hud.resumeDigit);
+}
+
+/** Draw behind the tunnel so exhaust never paints over solid walls. */
+function drawSmoke(
+	ctx: CanvasRenderingContext2D,
+	state: SimState,
+	puffs: readonly SmokePuff[],
+): void {
+	// The sprite's tail extends beyond the collision box.
+	const rear = state.config.world.width * state.config.helicopter.xFrac - ORIGIN.x * ART_PIXEL;
+	for (const puff of puffs) {
+		const age = (state.tick - puff.tick) / state.config.tickHz;
+		const progress = age / SMOKE_LIFETIME_SECONDS;
+		if (progress < 0 || progress >= 1) continue;
+		const stage = Math.min(3, Math.floor(progress * 4));
+		const size = 4 + stage * 2;
+		// Each puff has its own gentle rise, avoiding a rigid ribbon in motion.
+		const rise = 12 + 16 * (0.5 + 0.5 * Math.sin(puff.tick * 1.7));
+		// Snap all edges to a two-pixel grid; growth and fading happen in steps.
+		const x = Math.floor((rear + puff.distance - state.distance - age * 48 - size) / 2) * 2;
+		const y = Math.floor((puff.y - 3 * ART_PIXEL - age * rise - size / 2) / 2) * 2;
+		ctx.fillStyle = theme.smoke[stage] ?? theme.smoke[3];
+		if (stage === 3) {
+			// Break the oldest puff into sparse pixels as it dissipates.
+			for (let row = 0; row < size / 2; row++) {
+				for (let col = 0; col < size / 2; col++) {
+					if ((row + col) % 3 === 0) ctx.fillRect(x + col * 2, y + row * 2, 2, 2);
+				}
+			}
+		} else if (stage === 0) {
+			ctx.fillRect(x, y, size, size);
+		} else {
+			// Clipped square corners give each puff a chunky pixel-cloud silhouette.
+			ctx.fillRect(x + 2, y, size - 4, size);
+			ctx.fillRect(x, y + 2, size, size - 4);
+		}
+	}
 }
 
 /** Full-screen PAUSED overlay: scrim + centred title, mirroring `drawWrecked`. */

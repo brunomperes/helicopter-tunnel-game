@@ -7,6 +7,8 @@ export const theme = {
 	letterbox: "#000000",
 	tunnel: "#3ad12e",
 	helicopterAccent: "#8c949c",
+	/** Discrete smoke shades, from fresh exhaust to dissipating pixels. */
+	smoke: ["#a0a0a0", "#707070", "#404040", "#202020"],
 	hudText: "#ffffff",
 	devText: "#ffe14d",
 	/** Dev-mode collision box outline, drawn over the helicopter's hitbox. */
