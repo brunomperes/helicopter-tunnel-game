@@ -108,9 +108,8 @@ function drawTunnel(ctx: CanvasRenderingContext2D, state: SimState): void {
 }
 
 /**
- * The helicopter's hitbox rect — same bounds `drawHelicopter` fills and
- * `crashes()` (src/sim/collision.ts) checks against. Shared so the dev
- * collision-box overlay can't drift from the sprite it's meant to trace.
+ * The helicopter's hitbox rect, matching the bounds `crashes()` checks.
+ * Rotor tips and the tail extend beyond the box horizontally.
  */
 function helicopterHitbox(state: SimState) {
 	const { world, helicopter } = state.config;
@@ -133,10 +132,8 @@ function drawHelicopter(ctx: CanvasRenderingContext2D, state: SimState): void {
 }
 
 /**
- * Draws a sprite frame (rows of `PALETTE` keys / `.` for transparent) anchored
- * at its sim position, per-cell with `fillRect` rather than `drawImage` — see
- * `sprites.ts`'s header for why (the render test's fake context only stubs
- * `fillRect`/`fillText`).
+ * Draws a sprite frame (palette keys / `.` for transparent) anchored at its
+ * rounded sim position. Each solid cell fills one ART_PIXEL-sized square.
  */
 function blitSprite(
 	ctx: CanvasRenderingContext2D,
@@ -165,6 +162,9 @@ function blitSprite(
  */
 function drawCollisionBox(ctx: CanvasRenderingContext2D, state: SimState): void {
 	const box = helicopterHitbox(state);
+	// The resume countdown uses a thick, rounded text stroke on this context.
+	ctx.lineWidth = 1;
+	ctx.lineJoin = "miter";
 	ctx.strokeStyle = theme.collisionBox;
 	ctx.strokeRect(box.x, box.y, box.w, box.h);
 }

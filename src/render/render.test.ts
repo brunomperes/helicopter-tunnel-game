@@ -25,6 +25,8 @@ interface StrokedRect {
 	w: number;
 	h: number;
 	strokeStyle: string;
+	lineWidth: number;
+	lineJoin: string;
 }
 
 function recordingCtx() {
@@ -36,14 +38,22 @@ function recordingCtx() {
 		font: "",
 		textBaseline: "",
 		textAlign: "",
-		lineJoin: "",
-		lineWidth: 0,
+		lineJoin: "miter",
+		lineWidth: 1,
 		strokeStyle: "",
 		fillRect(x: number, y: number, w: number, h: number) {
 			rects.push({ x, y, w, h, fillStyle: ctx.fillStyle });
 		},
 		strokeRect(x: number, y: number, w: number, h: number) {
-			strokedRects.push({ x, y, w, h, strokeStyle: ctx.strokeStyle });
+			strokedRects.push({
+				x,
+				y,
+				w,
+				h,
+				strokeStyle: ctx.strokeStyle,
+				lineWidth: ctx.lineWidth,
+				lineJoin: ctx.lineJoin,
+			});
 		},
 		fillText(text: string) {
 			texts.push(text);
@@ -283,7 +293,22 @@ describe("render dev collision box", () => {
 			w: box.w,
 			h: box.h,
 			strokeStyle: theme.collisionBox,
+			lineWidth: 1,
+			lineJoin: "miter",
 		});
+	});
+
+	it("keeps the collision outline unchanged through pause, countdown and resume", () => {
+		const state = flyingState();
+		const { ctx, strokedRects } = recordingCtx();
+		render(ctx, state, { ...hud, dev: true });
+		const original = strokedRects[0];
+		render(ctx, state, { ...hud, dev: true, paused: true });
+		for (const resumeDigit of [3, 2, 1]) {
+			render(ctx, state, { ...hud, dev: true, resumeDigit });
+		}
+		render(ctx, state, { ...hud, dev: true });
+		for (const rect of strokedRects) expect(rect).toEqual(original);
 	});
 
 	it("does not stroke a collision box on the attract screen even when hud.dev is true", () => {

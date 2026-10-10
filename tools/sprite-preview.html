@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Helicopter sprite preview</title>
+		<style>
+			body { margin: 24px; background: #151515; color: white; font: 16px monospace; }
+			canvas { display: block; width: min(100%, 960px); height: auto; image-rendering: pixelated; }
+		</style>
+	</head>
+	<body>
+		<h1>Helicopter sprite preview</h1>
+		<p>Flying</p>
+		<canvas id="flying" width="960" height="540"></canvas>
+		<p>Wrecked</p>
+		<canvas id="wrecked" width="960" height="540"></canvas>
+		<script type="module">
+			import { render } from "../src/render/index.ts";
+			import { createInitialState, defaultConfig, step } from "../src/sim/index.ts";
+
+			const state = step(createInitialState("sprite-preview", defaultConfig), true);
+			const hud = { best: 42, dev: false, paused: false, resumeDigit: null };
+			for (const phase of ["flying", "wrecked"]) {
+				const ctx = document.getElementById(phase).getContext("2d");
+				ctx.imageSmoothingEnabled = false;
+				render(ctx, { ...state, phase, restartLock: 0 }, hud);
+			}
+		</script>
+	</body>
+</html>

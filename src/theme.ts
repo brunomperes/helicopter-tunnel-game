@@ -6,7 +6,7 @@ export const theme = {
 	background: "#000000",
 	letterbox: "#000000",
 	tunnel: "#3ad12e",
-	helicopterAccent: "#2b6fd8",
+	helicopterAccent: "#8c949c",
 	hudText: "#ffffff",
 	devText: "#ffe14d",
 	/** Dev-mode collision box outline, drawn over the helicopter's hitbox. */
@@ -29,12 +29,13 @@ export const theme = {
  */
 export const spritePalette = {
 	// Living helicopter
-	D: "#1a3f7a", // hullDark   - roof, shadow side, panel lines, hull outline
+	H: "#e0e4e8", // hull highlight - roof and tail boom
+	D: "#454d56", // hullDark   - roof, shadow side, panel lines, hull outline
 	M: theme.helicopterAccent, // hullMid    - main hull
-	G: "#12294a", // glass      - cockpit canopy
-	g: "#7fd8ff", // glassGlare - canopy glare
-	K: "#0d1420", // rotorBlack - mast, tail rotor, skids
-	R: "#93a6c9", // rotorBlur  - main-rotor blur bar
+	G: "#202c32", // glass      - cockpit canopy
+	g: "#d0e4e8", // glassGlare - canopy glare
+	K: "#636b72", // rotorBlack - mast, tail rotor, skids
+	R: "#aab0b5", // rotorBlur  - main-rotor blur bar
 	// Wreck
 	C: "#17171c", // charDark    - blackened structure
 	c: "#33323a", // charMid     - scorched panels
