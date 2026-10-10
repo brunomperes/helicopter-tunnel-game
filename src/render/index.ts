@@ -6,8 +6,9 @@
  */
 
 import { rampSpeed, type SimState } from "../sim/index.js";
-import { theme } from "../theme.js";
+import { spritePalette, theme } from "../theme.js";
 import { SMOKE_LIFETIME_SECONDS, type SmokePuff } from "./smoke.js";
+import { ART_PIXEL, ORIGIN, sprites } from "./sprites.js";
 
 export interface HudModel {
 	readonly best: number;
@@ -53,7 +54,8 @@ function drawSmoke(
 	state: SimState,
 	puffs: readonly SmokePuff[],
 ): void {
-	const rear = helicopterHitbox(state).x;
+	// The sprite's tail extends beyond the collision box.
+	const rear = state.config.world.width * state.config.helicopter.xFrac - ORIGIN.x * ART_PIXEL;
 	for (const puff of puffs) {
 		const age = (state.tick - puff.tick) / state.config.tickHz;
 		const progress = age / SMOKE_LIFETIME_SECONDS;
@@ -64,7 +66,7 @@ function drawSmoke(
 		const rise = 12 + 16 * (0.5 + 0.5 * Math.sin(puff.tick * 1.7));
 		// Snap all edges to a two-pixel grid; growth and fading happen in steps.
 		const x = Math.floor((rear + puff.distance - state.distance - age * 48 - size) / 2) * 2;
-		const y = Math.floor((puff.y - age * rise - size / 2) / 2) * 2;
+		const y = Math.floor((puff.y - 3 * ART_PIXEL - age * rise - size / 2) / 2) * 2;
 		ctx.fillStyle = theme.smoke[stage] ?? theme.smoke[3];
 		if (stage === 3) {
 			// Break the oldest puff into sparse pixels as it dissipates.
@@ -150,9 +152,8 @@ function drawTunnel(ctx: CanvasRenderingContext2D, state: SimState): void {
 }
 
 /**
- * The helicopter's hitbox rect — same bounds `drawHelicopter` fills and
- * `crashes()` (src/sim/collision.ts) checks against. Shared so the dev
- * collision-box overlay can't drift from the sprite it's meant to trace.
+ * The helicopter's hitbox rect, matching the bounds `crashes()` checks.
+ * Rotor tips and the tail extend beyond the box horizontally.
  */
 function helicopterHitbox(state: SimState) {
 	const { world, helicopter } = state.config;
@@ -160,18 +161,42 @@ function helicopterHitbox(state: SimState) {
 	const y = state.helicopter.y;
 	return {
 		x: x - helicopter.width / 2,
-		y: y - helicopter.height / 2,
+		y: y - helicopter.topOffset,
 		w: helicopter.width,
-		h: helicopter.height,
+		h: helicopter.topOffset + helicopter.bottomOffset,
 	};
 }
 
 function drawHelicopter(ctx: CanvasRenderingContext2D, state: SimState): void {
-	const box = helicopterHitbox(state);
-	ctx.fillStyle = theme.helicopter;
-	ctx.fillRect(box.x, box.y, box.w, box.h);
-	ctx.fillStyle = theme.helicopterAccent;
-	ctx.fillRect(box.x, box.y, box.w, 4);
+	const { world, helicopter } = state.config;
+	const x = world.width * helicopter.xFrac;
+	const y = state.helicopter.y;
+	const frame = state.phase === "wrecked" ? sprites.wreck : sprites.helicopter;
+	blitSprite(ctx, frame, x, y);
+}
+
+/**
+ * Draws a sprite frame (palette keys / `.` for transparent) anchored at its
+ * rounded sim position. Each solid cell fills one ART_PIXEL-sized square.
+ */
+function blitSprite(
+	ctx: CanvasRenderingContext2D,
+	frame: readonly string[],
+	anchorX: number,
+	anchorY: number,
+): void {
+	const left = Math.round(anchorX - ORIGIN.x * ART_PIXEL);
+	const top = Math.round(anchorY - ORIGIN.y * ART_PIXEL);
+	for (let row = 0; row < frame.length; row++) {
+		const line = frame[row];
+		if (!line) continue;
+		for (let col = 0; col < line.length; col++) {
+			const ch = line[col];
+			if (!ch || ch === ".") continue;
+			ctx.fillStyle = spritePalette[ch as keyof typeof spritePalette];
+			ctx.fillRect(left + col * ART_PIXEL, top + row * ART_PIXEL, ART_PIXEL, ART_PIXEL);
+		}
+	}
 }
 
 /**
@@ -181,6 +206,9 @@ function drawHelicopter(ctx: CanvasRenderingContext2D, state: SimState): void {
  */
 function drawCollisionBox(ctx: CanvasRenderingContext2D, state: SimState): void {
 	const box = helicopterHitbox(state);
+	// The resume countdown uses a thick, rounded text stroke on this context.
+	ctx.lineWidth = 1;
+	ctx.lineJoin = "miter";
 	ctx.strokeStyle = theme.collisionBox;
 	ctx.strokeRect(box.x, box.y, box.w, box.h);
 }
