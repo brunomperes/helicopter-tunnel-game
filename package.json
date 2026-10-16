@@ -22,7 +22,7 @@
 	"type": "module",
 	"private": true,
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.12",
+		"@biomejs/biome": "^2.5.15",
 		"@types/node": "^26.4.1",
 		"typescript": "^7.0.2",
 		"vite": "^8.2.2",
